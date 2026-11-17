@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+/*
+  Warna dan huruf utama aplikasi.
+  Ubah nilai di sini, maka semua halaman ikut berubah.
+  Contoh pemakaian di kode: bg-navy, text-primary, bg-primary-soft.
+*/
+@theme {
+  --font-sans: "Inter", system-ui, sans-serif;
+
+  --color-navy: #5a0f1c;
+  --color-navy-soft: #6f1a28;
+  --color-primary: #8f1d2c;
+  --color-primary-dark: #6e1421;
+  --color-primary-soft: #fbecee;
+  --color-page: #f3f5f9;
+  --color-line: #e3e8f0;
+  --color-ink: #141b2d;
+  --color-muted: #5b6680;
+
+  --color-ok: #16a34a;
+  --color-ok-soft: #e7f7ec;
+  --color-ok-ink: #0e6b32;
+  --color-warn: #f59e0b;
+  --color-warn-soft: #fff3d6;
+  --color-warn-ink: #8a5300;
+  --color-bad: #dc2626;
+  --color-bad-soft: #fde7e7;
+  --color-bad-ink: #a61b1b;
+}
+
+body {
+  margin: 0;
+  background: var(--color-page);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
