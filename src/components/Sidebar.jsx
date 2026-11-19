@@ -2,20 +2,25 @@ import { NavLink } from 'react-router-dom'
 import {
   Building2, Home, LayoutList, Briefcase, Activity, Wrench, ClipboardCheck, FileText, Settings, X,
 } from 'lucide-react'
+import { useAuth } from '../context/AuthContext.jsx'
 
-// Daftar menu di sidebar. Menambah menu = menambah satu baris di sini.
+// Daftar menu di sidebar. Menu dengan "aksi" hanya muncul untuk peran yang diizinkan.
 const MENU = [
   { ke: '/', label: 'Dashboard', ikon: Home },
   { ke: '/ruangan', label: 'Data Ruangan', ikon: LayoutList },
   { ke: '/fasilitas', label: 'Data Fasilitas', ikon: Briefcase },
   { ke: '/monitoring', label: 'Monitoring', ikon: Activity, lencana: 'Real-Time', samaDengan: '/' },
-  { ke: '/pemeliharaan', label: 'Pemeliharaan', ikon: Wrench },
-  { ke: '/rapid-inspection', label: 'Rapid Inspection', ikon: ClipboardCheck },
-  { ke: '/laporan', label: 'Laporan', ikon: FileText },
-  { ke: '/pengaturan', label: 'Pengaturan', ikon: Settings },
+  { ke: '/pemeliharaan', label: 'Pemeliharaan', ikon: Wrench, aksi: 'pemeliharaan' },
+  { ke: '/rapid-inspection', label: 'Rapid Inspection', ikon: ClipboardCheck, aksi: 'rapidInspection' },
+  { ke: '/laporan', label: 'Laporan', ikon: FileText, aksi: 'laporan' },
+  { ke: '/pengaturan', label: 'Pengaturan', ikon: Settings, aksi: 'pengaturan' },
 ]
 
 export default function Sidebar({ terbuka, tutup }) {
+  const { bisa } = useAuth()
+  // Hanya tampilkan menu yang boleh dibuka oleh peran pengguna
+  const menuTampil = MENU.filter((m) => !m.aksi || bisa(m.aksi))
+
   return (
     <>
       {/* Latar gelap di belakang menu saat dibuka di HP */}
@@ -45,7 +50,7 @@ export default function Sidebar({ terbuka, tutup }) {
         </div>
 
         <ul className="flex flex-col gap-1">
-          {MENU.map(({ ke, label, ikon: Ikon, lencana, samaDengan }) => (
+          {menuTampil.map(({ ke, label, ikon: Ikon, lencana, samaDengan }) => (
             <li key={label}>
               <NavLink
                 to={samaDengan ?? ke}
@@ -53,7 +58,7 @@ export default function Sidebar({ terbuka, tutup }) {
                 onClick={tutup}
                 className={({ isActive }) =>
                   `flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-[15px] transition-colors
-                  ${isActive && !samaDengan ? 'bg-blue-600 font-semibold' : 'text-slate-200 hover:bg-navy-soft'}`
+                  ${isActive && !samaDengan ? 'bg-primary font-semibold' : 'text-slate-200 hover:bg-navy-soft'}`
                 }
               >
                 <Ikon size={20} />

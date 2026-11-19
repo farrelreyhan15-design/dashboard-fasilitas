@@ -18,6 +18,15 @@ export const NAMA_PERAN = {
   mahasiswa: 'Mahasiswa',
 }
 
+// Hak akses: aksi apa saja yang boleh dilakukan setiap peran
+const HAK_AKSES = {
+  kelolaData: ['sarpras'], // tambah, ubah, hapus ruangan dan fasilitas
+  rapidInspection: ['dosen', 'pktl'],
+  laporan: ['dosen', 'sarpras'],
+  pemeliharaan: ['sarpras'],
+  pengaturan: ['sarpras'],
+}
+
 // Kunci untuk mengingat pengguna yang sedang login di browser
 const KUNCI = 'pengguna-login'
 
@@ -57,7 +66,12 @@ export function AuthProvider({ children }) {
     }
   }
 
-  return <AuthContext.Provider value={{ pengguna, login, logout }}>{children}</AuthContext.Provider>
+  // Mengecek apakah pengguna yang login boleh melakukan suatu aksi
+  function bisa(aksi) {
+    return Boolean(pengguna && HAK_AKSES[aksi]?.includes(pengguna.peran))
+  }
+
+  return <AuthContext.Provider value={{ pengguna, login, logout, bisa }}>{children}</AuthContext.Provider>
 }
 
 export function useAuth() {
