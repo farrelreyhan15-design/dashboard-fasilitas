@@ -5,6 +5,7 @@ import Header from '../components/Header.jsx'
 import StatusBadge from '../components/StatusBadge.jsx'
 import Modal, { gayaInput, gayaLabel, tombolUtama, tombolKedua } from '../components/Modal.jsx'
 import { useData } from '../context/DataContext.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
 import { FASILITAS_STANDAR, JENIS_RUANG } from '../data/dataAwal.js'
 
 const FORM_KOSONG = {
@@ -18,7 +19,8 @@ const FORM_KOSONG = {
 
 export default function DataRuangan() {
   const { ruang, tambahRuang } = useData()
-  const [params] = useSearchParams ()
+  const { bisa } = useAuth()
+  const [params] = useSearchParams()
   const [cari, setCari] = useState(params.get('cari') ?? '')
   const [filterLantai, setFilterLantai] = useState('Semua')
   const [formTerbuka, setFormTerbuka] = useState(false)
@@ -100,17 +102,19 @@ export default function DataRuangan() {
             <option>Lantai 2</option>
             <option>Lantai 3</option>
           </select>
-          <button
-            type="button"
-            onClick={() => {
-              setForm(FORM_KOSONG)
-              setError('')
-              setFormTerbuka(true)
-            }}
-            className={`${tombolUtama} sm:ml-auto`}
-          >
-            <Plus size={18} /> Tambah Ruangan
-          </button>
+          {bisa('kelolaData') && (
+            <button
+              type="button"
+              onClick={() => {
+                setForm(FORM_KOSONG)
+                setError('')
+                setFormTerbuka(true)
+              }}
+              className={`${tombolUtama} sm:ml-auto`}
+            >
+              <Plus size={18} /> Tambah Ruangan
+            </button>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -140,16 +144,20 @@ export default function DataRuangan() {
                     <div className="flex gap-1.5">
                       <Link
                         to={`/fasilitas?ruang=${r.id}`}
-                        className="inline-flex items-center min-h-9 px-3 rounded-lg border border-blue-200 text-primary text-[13px] font-semibold hover:bg-primary-soft"
+                        className="inline-flex items-center min-h-9 px-3 rounded-lg border border-primary/30 text-primary text-[13px] font-semibold hover:bg-primary-soft"
                       >
                         Fasilitas
                       </Link>
-                      <button type="button" aria-label={`Ubah ${r.nama}`} className="size-9 grid place-items-center rounded-lg border border-slate-200 hover:bg-slate-50">
-                        <Pencil size={15} />
-                      </button>
-                      <button type="button" aria-label={`Hapus ${r.nama}`} className="size-9 grid place-items-center rounded-lg border border-red-200 text-red-700 hover:bg-red-50">
-                        <Trash2 size={15} />
-                      </button>
+                      {bisa('kelolaData') && (
+                        <>
+                          <button type="button" aria-label={`Ubah ${r.nama}`} className="size-9 grid place-items-center rounded-lg border border-slate-200 hover:bg-slate-50">
+                            <Pencil size={15} />
+                          </button>
+                          <button type="button" aria-label={`Hapus ${r.nama}`} className="size-9 grid place-items-center rounded-lg border border-red-200 text-red-700 hover:bg-red-50">
+                            <Trash2 size={15} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>

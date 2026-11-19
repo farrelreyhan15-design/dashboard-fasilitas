@@ -6,6 +6,7 @@ import Header from '../components/Header.jsx'
 import StatusBadge from '../components/StatusBadge.jsx'
 import { tombolUtama } from '../components/Modal.jsx'
 import { useData } from '../context/DataContext.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
 
 const FILTER_LANTAI = ['Semua', 'Lantai 1', 'Lantai 2', 'Lantai 3']
 
@@ -16,6 +17,7 @@ function persen(n, total) {
 
 export default function Dashboard() {
   const { ruang, fasilitas, aktivitas } = useData()
+  const { bisa } = useAuth()
   const [lantai, setLantai] = useState('Semua')
   const [cari, setCari] = useState('')
 
@@ -81,9 +83,11 @@ export default function Dashboard() {
         <section aria-label="Status ruangan" className="flex-[999_1_600px] min-w-0 bg-white border border-line rounded-2xl p-5 flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-xl font-extrabold">Status Ruangan</h2>
-            <Link to="/ruangan" className={tombolUtama}>
-              <Plus size={18} /> Tambah Ruangan
-            </Link>
+            {bisa('kelolaData') && (
+              <Link to="/ruangan" className={tombolUtama}>
+                <Plus size={18} /> Tambah Ruangan
+              </Link>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-2.5 items-center">
