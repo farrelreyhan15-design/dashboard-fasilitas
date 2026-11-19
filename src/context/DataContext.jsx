@@ -64,7 +64,11 @@ export function DataProvider({ children }) {
     }
     catat(`Ruangan baru ditambahkan: ${data.nama}`)
   }
-
+  
+  function ubahRuang(id, data) {
+    setRuang((lama) => lama.map((r) => (r.id === id ? { ...r, ...data } : r)))
+    catat(`Data ruangan diperbarui: ${data.nama}`)
+  }
   function tambahFasilitas(data) {
     setFasilitas((lama) => [...lama, { ...data, baru: true, terakhirDicek: 'Baru ditambahkan' }])
     catat(`Fasilitas ditambahkan: ${data.jumlah} ${data.satuan} ${data.nama} di R. ${data.ruangId}`)
@@ -74,7 +78,7 @@ export function DataProvider({ children }) {
     setFasilitas((lama) => lama.filter((f) => f.id !== id))
   }
 
-  const nilai = { ruang: ruangDenganStatus, fasilitas, aktivitas, tambahRuang, tambahFasilitas, hapusFasilitas }
+    const nilai = { ruang: ruangDenganStatus, fasilitas, aktivitas, tambahRuang, ubahRuang, tambahFasilitas, hapusFasilitas }
   return <DataContext.Provider value={nilai}>{children}</DataContext.Provider>
 }
 

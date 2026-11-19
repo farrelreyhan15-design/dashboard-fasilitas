@@ -51,6 +51,9 @@ export const ruangAwal = nomorRuang.map((no, i) => ({
   lantai: Number(no[2]),
   jenis: 'Ruang Kuliah',
   kapasitas: 40,
+  luas: 72,
+  penanggungJawab: 'Petugas PKTL Gedung 4',
+  deskripsi: 'Ruang kuliah reguler untuk perkuliahan tatap muka.',
   inspeksiTerakhir: `17 Nov 2026, ${String(8 + Math.floor(i / 6)).padStart(2, '0')}.${String((i * 7) % 60).padStart(2, '0')}`,
 }))
 
@@ -73,4 +76,14 @@ export const aktivitasAwal = [
   { teks: 'Rapid inspection R. 4.306 selesai, kondisi Baik', oleh: 'Petugas PKTL', waktu: '09.10' },
   { teks: 'Laporan baru: R. 4.105 AC tidak menyala', oleh: 'Dosen', waktu: '09.05' },
   { teks: 'Fasilitas ditambahkan: 2 unit AC di R. 4.203', oleh: 'Sarana Prasarana', waktu: 'Kemarin 13.05' },
+]
+
+// Riwayat pemeliharaan (contoh) untuk tab "Riwayat Pemeliharaan" di Data Ruangan
+export const riwayatAwal = [
+  { ruangId: '4.105', tanggal: '17 Nov 2026', kegiatan: 'AC tidak menyala, menunggu teknisi', oleh: 'Sarana Prasarana', status: 'rusak' },
+  { ruangId: '4.304', tanggal: '17 Nov 2026', kegiatan: 'Proyektor tidak menampilkan gambar, dicek teknisi', oleh: 'Sarana Prasarana', status: 'rusak' },
+  { ruangId: '4.203', tanggal: '17 Nov 2026', kegiatan: 'Lampu proyektor redup, dijadwalkan penggantian', oleh: 'Sarana Prasarana', status: 'perawatan' },
+  { ruangId: '4.203', tanggal: '10 Nov 2026', kegiatan: 'Pembersihan filter AC', oleh: 'Petugas PKTL', status: 'baik' },
+  { ruangId: '4.101', tanggal: '6 Nov 2026', kegiatan: 'Penggantian 2 lampu', oleh: 'Petugas PKTL', status: 'baik' },
+  { ruangId: '4.201', tanggal: '16 Nov 2026', kegiatan: 'Perbaikan stop kontak depan', oleh: 'Sarana Prasarana', status: 'baik' },
 ]
