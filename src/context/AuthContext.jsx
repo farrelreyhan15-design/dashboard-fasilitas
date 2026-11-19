@@ -32,7 +32,7 @@ export const DAFTAR_AKSI = [
 // Hak akses: aksi apa saja yang boleh dilakukan setiap peran
 export const HAK_AKSES = {
   kelolaData: ['sarpras'],
-  rapidInspection: ['dosen', 'pktl'],
+    rapidInspection: ['dosen', 'pktl', 'sarpras'],
   laporan: ['dosen', 'sarpras'],
   pemeliharaan: ['sarpras'],
   pengaturan: ['sarpras'],
