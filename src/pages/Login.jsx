@@ -18,8 +18,8 @@ export default function Login() {
   function kirim(e) {
     e.preventDefault()
     if (!email || !sandi) return setError('Email dan kata sandi wajib diisi.')
-    const berhasil = login(email, sandi)
-    if (!berhasil) return setError('Email atau kata sandi salah.')
+    const hasil = login(email, sandi)
+    if (hasil !== true) return setError(hasil)
     navigate('/', { replace: true })
   }
 

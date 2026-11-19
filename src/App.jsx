@@ -5,6 +5,7 @@ import DataRuangan from './pages/DataRuangan.jsx'
 import DataFasilitas from './pages/DataFasilitas.jsx'
 import SegeraHadir from './pages/SegeraHadir.jsx'
 import Login from './pages/Login.jsx'
+import Pengaturan from './pages/Pengaturan.jsx'
 import { useAuth } from './context/AuthContext.jsx'
 
 // Penjaga 1: kalau belum login, arahkan ke halaman login
@@ -68,7 +69,7 @@ export default function App() {
           path="/pengaturan"
           element={
             <HanyaUntuk aksi="pengaturan">
-              <SegeraHadir judul="Pengaturan" />
+                <Pengaturan />
             </HanyaUntuk>
           }
         />
