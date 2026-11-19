@@ -5,6 +5,7 @@ import Header from '../components/Header.jsx'
 import StatusBadge from '../components/StatusBadge.jsx'
 import Modal, { gayaInput, gayaLabel, tombolUtama, tombolKedua } from '../components/Modal.jsx'
 import { useData } from '../context/DataContext.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
 import { KATEGORI, SATUAN, STATUS } from '../data/dataAwal.js'
 
 const FORM_KOSONG = { nama: '', kategori: 'Elektronik', jumlah: '1', satuan: 'unit', kondisi: 'baik' }
@@ -17,6 +18,7 @@ function singkatan(nama) {
 
 export default function DataFasilitas() {
   const { ruang, fasilitas, tambahFasilitas, hapusFasilitas } = useData()
+    const { bisa } = useAuth()
   const [params, setParams] = useSearchParams()
   const ruangId = params.get('ruang') ?? ruang[0]?.id
   const ruangAktif = ruang.find((r) => r.id === ruangId) ?? ruang[0]
@@ -141,17 +143,19 @@ export default function DataFasilitas() {
               <span className="text-[13px] text-slate-600">
                 <b>{milikRuang.length}</b> fasilitas · <b className="text-bad-ink">{ruangAktif.jumlahMasalah}</b> bermasalah
               </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setForm(FORM_KOSONG)
-                  setError('')
-                  setFormTerbuka(true)
-                }}
-                className={tombolUtama}
-              >
-                <Plus size={18} /> Tambah Fasilitas
-              </button>
+              {bisa('kelolaData') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForm(FORM_KOSONG)
+                    setError('')
+                    setFormTerbuka(true)
+                  }}
+                  className={tombolUtama}
+                >
+                  <Plus size={18} /> Tambah Fasilitas
+                </button>
+              )}
             </div>
           </div>
 
@@ -160,7 +164,9 @@ export default function DataFasilitas() {
               <table className="w-full min-w-[820px] text-sm border-collapse">
                 <thead>
                   <tr className="text-left text-slate-600 text-[13px] border-b border-line">
-                    {['Fasilitas', 'Kategori', 'Jumlah', 'Kode Aset / QR', 'Kondisi', 'Terakhir Dicek', 'Aksi'].map((h) => (
+                  {['Fasilitas', 'Kategori', 'Jumlah', 'Kode Aset / QR', 'Kondisi', 'Terakhir Dicek', 'Aksi']
+                      .filter((h) => h !== 'Aksi' || bisa('kelolaData'))
+                      .map((h) => (
                       <th key={h} className="px-4 py-3 font-bold">
                         {h}
                       </th>
@@ -185,21 +191,23 @@ export default function DataFasilitas() {
                         <StatusBadge status={f.kondisi} />
                       </td>
                       <td className="px-4 py-3 text-muted">{f.terakhirDicek}</td>
-                      <td className="px-4 py-2">
-                        <div className="flex gap-1.5">
-                          <button type="button" aria-label={`Ubah ${f.nama}`} className="size-9 grid place-items-center rounded-lg border border-slate-200 hover:bg-slate-50">
-                            <Pencil size={15} />
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={`Hapus ${f.nama}`}
-                            onClick={() => hapusFasilitas(f.id)}
-                            className="size-9 grid place-items-center rounded-lg border border-red-200 text-red-700 hover:bg-red-50"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </td>
+                                           {bisa('kelolaData') && (
+                        <td className="px-4 py-2">
+                          <div className="flex gap-1.5">
+                            <button type="button" aria-label={`Ubah ${f.nama}`} className="size-9 grid place-items-center rounded-lg border border-slate-200 hover:bg-slate-50">
+                              <Pencil size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`Hapus ${f.nama}`}
+                              onClick={() => hapusFasilitas(f.id)}
+                              className="size-9 grid place-items-center rounded-lg border border-red-200 text-red-700 hover:bg-red-50"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                   {milikRuang.length === 0 && (
