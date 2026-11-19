@@ -7,10 +7,16 @@ import SegeraHadir from './pages/SegeraHadir.jsx'
 import Login from './pages/Login.jsx'
 import { useAuth } from './context/AuthContext.jsx'
 
-// Penjaga halaman: kalau belum login, arahkan ke halaman login
+// Penjaga 1: kalau belum login, arahkan ke halaman login
 function WajibLogin({ children }) {
   const { pengguna } = useAuth()
   return pengguna ? children : <Navigate to="/login" replace />
+}
+
+// Penjaga 2: kalau peran tidak diizinkan, kembalikan ke Dashboard
+function HanyaUntuk({ aksi, children }) {
+  const { bisa } = useAuth()
+  return bisa(aksi) ? children : <Navigate to="/" replace />
 }
 
 // Daftar halaman (route). Menambah halaman baru = menambah satu baris <Route>.
@@ -28,13 +34,45 @@ export default function App() {
           </WajibLogin>
         }
       >
+        {/* Terbuka untuk semua peran */}
         <Route path="/" element={<Dashboard />} />
         <Route path="/ruangan" element={<DataRuangan />} />
         <Route path="/fasilitas" element={<DataFasilitas />} />
-        <Route path="/pemeliharaan" element={<SegeraHadir judul="Pemeliharaan" />} />
-        <Route path="/rapid-inspection" element={<SegeraHadir judul="Rapid Inspection" />} />
-        <Route path="/laporan" element={<SegeraHadir judul="Laporan" />} />
-        <Route path="/pengaturan" element={<SegeraHadir judul="Pengaturan" />} />
+
+        {/* Hanya untuk peran tertentu */}
+        <Route
+          path="/pemeliharaan"
+          element={
+            <HanyaUntuk aksi="pemeliharaan">
+              <SegeraHadir judul="Pemeliharaan" />
+            </HanyaUntuk>
+          }
+        />
+        <Route
+          path="/rapid-inspection"
+          element={
+            <HanyaUntuk aksi="rapidInspection">
+              <SegeraHadir judul="Rapid Inspection" />
+            </HanyaUntuk>
+          }
+        />
+        <Route
+          path="/laporan"
+          element={
+            <HanyaUntuk aksi="laporan">
+              <SegeraHadir judul="Laporan" />
+            </HanyaUntuk>
+          }
+        />
+        <Route
+          path="/pengaturan"
+          element={
+            <HanyaUntuk aksi="pengaturan">
+              <SegeraHadir judul="Pengaturan" />
+            </HanyaUntuk>
+          }
+        />
+
         <Route path="*" element={<SegeraHadir judul="Halaman tidak ditemukan" />} />
       </Route>
     </Routes>
