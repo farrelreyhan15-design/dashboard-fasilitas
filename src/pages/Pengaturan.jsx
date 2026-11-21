@@ -22,11 +22,11 @@ export default function Pengaturan() {
 
   const ubah = (kolom) => (e) => setForm({ ...form, [kolom]: e.target.value })
 
-  function simpanAkun() {
+  async function simpanAkun() {
     if (!form.nama.trim() || !form.email.trim()) return setError('Nama dan email wajib diisi.')
     if (!form.email.includes('@')) return setError('Format email belum benar.')
     if (form.sandi.length < 6) return setError('Kata sandi minimal 6 karakter.')
-    const gagal = tambahAkun(form)
+    const gagal = await tambahAkun(form)
     if (gagal) return setError(gagal)
     setPesan(`Akun ${form.nama.trim()} (${NAMA_PERAN[form.peran]}) berhasil ditambahkan.`)
     setFormTerbuka(false)

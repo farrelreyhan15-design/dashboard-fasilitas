@@ -10,15 +10,19 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [sandi, setSandi] = useState('')
   const [lihatSandi, setLihatSandi] = useState(false)
-  const [error, setError] = useState('')
+    const [error, setError] = useState('')
+  const [sedang, setSedang] = useState(false)
 
   // Kalau sudah login, langsung ke dashboard
   if (pengguna) return <Navigate to="/" replace />
 
-  function kirim(e) {
+    async function kirim(e) {
     e.preventDefault()
     if (!email || !sandi) return setError('Email dan kata sandi wajib diisi.')
-    const hasil = login(email, sandi)
+    setError('')
+    setSedang(true)
+    const hasil = await login(email, sandi)
+    setSedang(false)
     if (hasil !== true) return setError(hasil)
     navigate('/', { replace: true })
   }
@@ -73,8 +77,8 @@ export default function Login() {
             </p>
           )}
 
-          <button type="submit" className={`${tombolUtama} w-full mt-1`}>
-            <LogIn size={18} /> Masuk
+            <button type="submit" disabled={sedang} className={`${tombolUtama} w-full mt-1 disabled:opacity-60`}>
+            <LogIn size={18} /> {sedang ? 'Memproses…' : 'Masuk'}
           </button>
 
           {/* Daftar akun uji coba. Hapus bagian ini saat sudah memakai Supabase. */}

@@ -17,8 +17,8 @@ export default function Header({ judul, subjudul }) {
   const { pengguna, logout } = useAuth()
   const navigate = useNavigate()
 
-  function keluar() {
-    logout()
+    async function keluar() {
+    await logout()
     navigate('/login', { replace: true })
   }
 

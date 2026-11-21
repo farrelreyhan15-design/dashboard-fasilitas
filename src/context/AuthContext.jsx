@@ -1,17 +1,12 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
+import { createClient } from '@supabase/supabase-js'
+import { supabase } from '../lib/supabase.js'
 
 /*
-  AKUN & HAK AKSES (sementara, tersimpan di browser)
-  Nanti isi file ini diganti dengan Supabase Auth, halaman lain tidak perlu diubah.
+  AKUN & HAK AKSES (memakai Supabase Auth)
+  - Email dan kata sandi disimpan dan diperiksa oleh Supabase (auth.users)
+  - Nama, peran, dan status aktif disimpan di tabel profiles
 */
-
-// Akun awal saat aplikasi pertama kali dibuka
-const AKUN_AWAL = [
-  { id: 'u1', email: 'sarpras@uisi.ac.id', sandi: 'sarpras123', nama: 'Farrel Reyhan', peran: 'sarpras', aktif: true },
-  { id: 'u2', email: 'dosen@uisi.ac.id', sandi: 'dosen123', nama: 'Dosen Uji', peran: 'dosen', aktif: true },
-  { id: 'u3', email: 'pktl@uisi.ac.id', sandi: 'pktl123', nama: 'Petugas PKTL', peran: 'pktl', aktif: true },
-  { id: 'u4', email: 'mahasiswa@uisi.ac.id', sandi: 'mhs123', nama: 'Mahasiswa Uji', peran: 'mahasiswa', aktif: true },
-]
 
 export const NAMA_PERAN = {
   sarpras: 'Sarana Prasarana',
@@ -32,58 +27,88 @@ export const DAFTAR_AKSI = [
 // Hak akses: aksi apa saja yang boleh dilakukan setiap peran
 export const HAK_AKSES = {
   kelolaData: ['sarpras'],
-    rapidInspection: ['dosen', 'pktl', 'sarpras'],
+  rapidInspection: ['dosen', 'pktl', 'sarpras'],
   laporan: ['dosen', 'sarpras'],
   pemeliharaan: ['sarpras'],
   pengaturan: ['sarpras'],
 }
 
-// Penyimpanan di browser
-function baca(kunci, cadangan) {
-  try {
-    return JSON.parse(localStorage.getItem(kunci)) ?? cadangan
-  } catch {
-    return cadangan
-  }
-}
-function simpan(kunci, nilai) {
-  try {
-    localStorage.setItem(kunci, JSON.stringify(nilai))
-  } catch {
-    // abaikan kalau browser tidak mengizinkan penyimpanan
-  }
+const KOLOM_PROFIL = 'id, email, nama, peran, aktif'
+
+// Mengambil profil (nama, peran, aktif) milik satu akun
+async function ambilProfil(idAkun) {
+  const { data } = await supabase.from('profiles').select(KOLOM_PROFIL).eq('id', idAkun).maybeSingle()
+  return data
 }
 
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  const [daftarAkun, setDaftarAkun] = useState(() => baca('daftar-akun', AKUN_AWAL))
-  const [idLogin, setIdLogin] = useState(() => baca('id-login', null))
+  const [pengguna, setPengguna] = useState(null)
+  const [memuat, setMemuat] = useState(true)
+  const [daftarAkun, setDaftarAkun] = useState([])
 
-  // Pengguna yang sedang login (selalu mengikuti data terbaru, misalnya kalau perannya diubah)
-  const akunLogin = daftarAkun.find((a) => a.id === idLogin && a.aktif)
-  const pengguna = akunLogin
-    ? { id: akunLogin.id, email: akunLogin.email, nama: akunLogin.nama, peran: akunLogin.peran }
-    : null
+  // Saat aplikasi dibuka: cek apakah masih ada sesi login sebelumnya
+  useEffect(() => {
+    let masihTerpasang = true
 
-  function perbaruiAkun(baru) {
-    setDaftarAkun(baru)
-    simpan('daftar-akun', baru)
-  }
+    supabase.auth.getSession().then(async ({ data }) => {
+      const profil = data.session ? await ambilProfil(data.session.user.id) : null
+      if (!masihTerpasang) return
+      setPengguna(profil?.aktif ? profil : null)
+      setMemuat(false)
+    })
+
+    // Kalau sesi berakhir (logout atau kedaluwarsa), kosongkan pengguna
+    const { data: langganan } = supabase.auth.onAuthStateChange((kejadian) => {
+      if (kejadian === 'SIGNED_OUT') setPengguna(null)
+    })
+
+    return () => {
+      masihTerpasang = false
+      langganan.subscription.unsubscribe()
+    }
+  }, [])
+
+  // Khusus Sarpras: ambil daftar semua akun untuk halaman Pengaturan
+  useEffect(() => {
+    if (pengguna?.peran !== 'sarpras') return
+    supabase
+      .from('profiles')
+      .select(KOLOM_PROFIL)
+      .order('dibuat_pada')
+      .then(({ data }) => setDaftarAkun(data ?? []))
+  }, [pengguna?.peran])
 
   // Mengembalikan true kalau berhasil, atau pesan kesalahan kalau gagal
-  function login(email, sandi) {
-    const akun = daftarAkun.find((a) => a.email === email.trim().toLowerCase() && a.sandi === sandi)
-    if (!akun) return 'Email atau kata sandi salah.'
-    if (!akun.aktif) return 'Akun ini sedang dinonaktifkan. Hubungi Sarana Prasarana.'
-    setIdLogin(akun.id)
-    simpan('id-login', akun.id)
+  async function login(email, sandi) {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password: sandi,
+    })
+    if (error) {
+      return error.status === 400
+        ? 'Email atau kata sandi salah.'
+        : 'Gagal terhubung ke server. Periksa koneksi internet lalu coba lagi.'
+    }
+
+    const profil = await ambilProfil(data.user.id)
+    if (!profil) {
+      await supabase.auth.signOut()
+      return 'Profil akun tidak ditemukan. Hubungi Sarana Prasarana.'
+    }
+    if (!profil.aktif) {
+      await supabase.auth.signOut()
+      return 'Akun ini sedang dinonaktifkan. Hubungi Sarana Prasarana.'
+    }
+
+    setPengguna(profil)
     return true
   }
 
-  function logout() {
-    setIdLogin(null)
-    simpan('id-login', null)
+  async function logout() {
+    await supabase.auth.signOut()
+    setPengguna(null)
   }
 
   // Mengecek apakah pengguna yang login boleh melakukan suatu aksi
@@ -94,19 +119,48 @@ export function AuthProvider({ children }) {
   // ===== Kelola akun (untuk halaman Pengaturan) =====
 
   // Mengembalikan null kalau berhasil, atau pesan kesalahan kalau gagal
-  function tambahAkun({ nama, email, peran, sandi }) {
+  async function tambahAkun({ nama, email, peran, sandi }) {
     const emailBersih = email.trim().toLowerCase()
-    if (daftarAkun.some((a) => a.email === emailBersih)) return `Email ${emailBersih} sudah terdaftar.`
-    perbaruiAkun([...daftarAkun, { id: `u${Date.now()}`, nama: nama.trim(), email: emailBersih, peran, sandi, aktif: true }])
+
+    // Klien sementara yang tidak menyimpan sesi,
+    // supaya Sarpras tidak ikut "pindah login" ke akun baru
+    const klienDaftar = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'daftar-akun-baru' },
+    })
+
+    const { data, error } = await klienDaftar.auth.signUp({
+      email: emailBersih,
+      password: sandi,
+      options: { data: { nama: nama.trim() } },
+    })
+    if (error) {
+      return error.message.toLowerCase().includes('registered')
+        ? `Email ${emailBersih} sudah terdaftar.`
+        : `Gagal menambah akun: ${error.message}`
+    }
+    if (!data.user?.identities?.length) return `Email ${emailBersih} sudah terdaftar.`
+
+    // Profil sudah dibuat otomatis oleh trigger (peran awal: mahasiswa), lalu perannya diatur di sini
+    const { error: errorPeran } = await supabase.from('profiles').update({ peran }).eq('id', data.user.id)
+    if (errorPeran) return `Akun dibuat, tetapi peran gagal diatur: ${errorPeran.message}`
+
+    setDaftarAkun((lama) => [...lama, { id: data.user.id, email: emailBersih, nama: nama.trim(), peran, aktif: true }])
     return null
   }
 
-  function ubahPeran(id, peran) {
-    perbaruiAkun(daftarAkun.map((a) => (a.id === id ? { ...a, peran } : a)))
+  async function ubahPeran(id, peran) {
+    const { error } = await supabase.from('profiles').update({ peran }).eq('id', id)
+    if (!error) setDaftarAkun((lama) => lama.map((a) => (a.id === id ? { ...a, peran } : a)))
   }
 
-  function ubahStatus(id, aktif) {
-    perbaruiAkun(daftarAkun.map((a) => (a.id === id ? { ...a, aktif } : a)))
+  async function ubahStatus(id, aktif) {
+    const { error } = await supabase.from('profiles').update({ aktif }).eq('id', id)
+    if (!error) setDaftarAkun((lama) => lama.map((a) => (a.id === id ? { ...a, aktif } : a)))
+  }
+
+  // Selama sesi lama sedang dicek, tampilkan layar memuat
+  if (memuat) {
+    return <div className="min-h-screen grid place-items-center text-sm text-muted">Memuat…</div>
   }
 
   const nilai = { pengguna, login, logout, bisa, daftarAkun, tambahAkun, ubahPeran, ubahStatus }
