@@ -12,6 +12,7 @@ import Modal, { gayaInput, gayaLabel, tombolUtama, tombolKedua } from '../compon
 import { useData } from '../context/DataContext.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { KATEGORI, SATUAN, STATUS, DAFTAR_KAMPUS, FASILITAS_STANDAR, gedungDiKampus, buatId } from '../data/konstanta.js'
+import { PilStatus } from './Pemeliharaan.jsx'
 
 const PER_HALAMAN = 10
 const FORM_KOSONG = { ruangId: '', nama: '', kategori: 'Elektronik', jumlah: '1', satuan: 'unit', kondisi: 'baik', lacakPerUnit: false }
@@ -579,13 +580,7 @@ function PanelDetail({ f, r, setPesan, tidakDipilih }) {
 
       {tab === 'riwayat' && <RiwayatKondisi f={f} />}
 
-      {tab === 'laporan' && (
-        <div className="text-center py-8 flex flex-col items-center gap-2 text-sm text-muted">
-          <ClipboardList size={34} />
-          <p className="font-semibold text-slate-700">Laporan &amp; pemeliharaan fasilitas ini</p>
-          <p>Akan tampil di sini setelah menu Laporan dibuat.</p>
-        </div>
-      )}
+      {tab === 'laporan' && <LaporanFasilitas f={f} />}
 
       {ubahTerbuka && <FormUbahFasilitas f={f} tutup={() => setUbahTerbuka(false)} setPesan={setPesan} />}
       {unitDiubah && <FormUnit u={unitDiubah} f={f} tutup={() => setUnitDiubah(null)} setPesan={setPesan} />}
@@ -1043,5 +1038,55 @@ function FormKondisi({ f, u, tutup, setPesan }) {
         {error && <p role="alert" className="text-sm font-semibold text-red-700">{error}</p>}
       </div>
     </Modal>
+  )
+}
+
+// ===== Tab Laporan: semua laporan untuk fasilitas ini =====
+function LaporanFasilitas({ f }) {
+  const { laporan } = useData()
+  const { bisa } = useAuth()
+  const milik = laporan.filter((l) => l.fasilitasId === f.id)
+
+  if (milik.length === 0) {
+    return (
+      <div className="text-center py-8 flex flex-col items-center gap-2 text-sm text-muted">
+        <ClipboardList size={34} />
+        <p>Belum ada laporan untuk fasilitas ini.</p>
+      </div>
+    )
+  }
+
+  return (
+    <ul className="flex flex-col gap-2">
+      {milik.map((l) => {
+        const isi = (
+          <>
+            <span className="flex items-start justify-between gap-2">
+              <span className="text-sm font-bold">Laporan #{l.id}</span>
+              <PilStatus status={l.status} />
+            </span>
+            <span className="text-xs text-muted">
+              {l.dibuat} · {l.pelapor} · {l.sumber === 'inspeksi' ? 'Rapid Inspection' : 'Laporan manual'}
+            </span>
+            <span className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
+              <StatusBadge status={l.kondisi} /> {l.jumlah} {f.satuan}
+              {l.catatan && <span>· {l.catatan}</span>}
+            </span>
+            {l.tindakLanjut && <span className="text-xs text-slate-700">Tindak lanjut: {l.tindakLanjut}</span>}
+          </>
+        )
+        return (
+          <li key={l.id}>
+            {bisa('pemeliharaan') ? (
+              <Link to={`/pemeliharaan?id=${l.id}`} className="flex flex-col gap-1.5 p-3 rounded-xl border border-line hover:bg-slate-50">
+                {isi}
+              </Link>
+            ) : (
+              <div className="flex flex-col gap-1.5 p-3 rounded-xl border border-line">{isi}</div>
+            )}
+          </li>
+        )
+      })}
+    </ul>
   )
 }

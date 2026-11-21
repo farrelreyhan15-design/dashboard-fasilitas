@@ -161,6 +161,31 @@ function inspeksiDariDb(i) {
   }
 }
 
+function laporanDariDb(l) {
+  return {
+    id: String(l.id),
+    ruangId: String(l.ruangan_id),
+    fasilitasId: l.fasilitas_id ? String(l.fasilitas_id) : null,
+    namaFasilitas: l.nama_fasilitas,
+    sumber: l.sumber,
+    kondisi: l.kondisi,
+    jumlah: l.jumlah,
+    catatan: l.catatan ?? '',
+    foto: (l.foto ?? []).map((path) => supabase.storage.from(BUCKET_FOTO).getPublicUrl(path).data.publicUrl),
+    status: l.status,
+    pelapor: l.nama_pelapor,
+    peranPelapor: l.peran_pelapor,
+    penangan: l.penangan ?? '',
+    tindakLanjut: l.tindak_lanjut ?? '',
+    dibuat: formatTanggal(l.dibuat_pada),
+    diproses: l.diproses_pada ? formatTanggal(l.diproses_pada) : '',
+    selesai: l.selesai_pada ? formatTanggal(l.selesai_pada) : '',
+    dibuatAsli: l.dibuat_pada,
+    selesaiAsli: l.selesai_pada,
+    unitIds: (l.laporan_unit ?? []).map((u) => String(u.unit_id)),
+  }
+}
+
 function aktivitasDariDb(a) {
   return { id: a.id, teks: a.teks, oleh: a.oleh, waktu: formatTanggal(a.waktu) }
 }
@@ -179,6 +204,7 @@ export function DataProvider({ children }) {
   const [aktivitas, setAktivitas] = useState([])
   const [inspeksi, setInspeksi] = useState([])
   const [unit, setUnit] = useState([])
+  const [laporan, setLaporan] = useState([])
   const [memuat, setMemuat] = useState(true)
   const [galatMuat, setGalatMuat] = useState('')
 
@@ -205,6 +231,7 @@ export function DataProvider({ children }) {
       setAktivitas((hasilAktivitas.data ?? []).map(aktivitasDariDb))
       setInspeksi((hasilInspeksi.data ?? []).map(inspeksiDariDb))
       setUnit((hasilUnit.data ?? []).map(unitDariDb))
+      await muatLaporan()
       setMemuat(false)
     }
 
@@ -489,10 +516,9 @@ export function DataProvider({ children }) {
     return {}
   }
 
-  // ===== Rapid Inspection =====
-  // hasil = [{ fasilitasId, kondisi, jumlah, catatan }, ...], daftarFoto = file gambar dari HP/laptop
-  async function simpanInspeksi(ruangId, catatan, hasil, durasiDetik, daftarFoto = []) {
-    // 1) Unggah foto dulu ke Storage, di folder milik akun yang login
+  // ===== Foto =====
+  // Mengunggah foto ke Storage, di folder milik akun yang login. Mengembalikan daftar path-nya.
+  async function unggahFoto(daftarFoto) {
     const pathFoto = []
     for (const [urutan, file] of daftarFoto.entries()) {
       const foto = await kecilkanFoto(file)
@@ -501,6 +527,16 @@ export function DataProvider({ children }) {
       if (error) return { error: `Foto ke-${urutan + 1} gagal diunggah: ${error.message}` }
       pathFoto.push(path)
     }
+    return { pathFoto }
+  }
+
+  // ===== Rapid Inspection =====
+  // hasil = [{ fasilitasId, kondisi, jumlah, catatan }, ...], daftarFoto = file gambar dari HP/laptop
+  async function simpanInspeksi(ruangId, catatan, hasil, durasiDetik, daftarFoto = []) {
+    // 1) Unggah foto dulu
+    const unggahan = await unggahFoto(daftarFoto)
+    if (unggahan.error) return { error: unggahan.error }
+    const pathFoto = unggahan.pathFoto
 
     // 2) Simpan hasil inspeksi lewat fungsi database
     const { error } = await supabase.rpc('simpan_inspeksi', {
@@ -529,6 +565,60 @@ export function DataProvider({ children }) {
     }
     if (hasilInspeksi.data) setInspeksi(hasilInspeksi.data.map(inspeksiDariDb))
     if (hasilAktivitas.data) setAktivitas(hasilAktivitas.data.map(aktivitasDariDb))
+    await muatLaporan() // temuan Bermasalah/Rusak otomatis menjadi laporan
+    return {}
+  }
+
+  // ===== Laporan =====
+  async function muatLaporan() {
+    const { data } = await supabase
+      .from('laporan')
+      .select('*, laporan_unit(unit_id)')
+      .order('dibuat_pada', { ascending: false })
+      .limit(500)
+    if (data) setLaporan(data.map(laporanDariDb))
+  }
+
+  async function muatAktivitas() {
+    const { data } = await supabase.from('aktivitas').select('*').order('waktu', { ascending: false }).limit(20)
+    if (data) setAktivitas(data.map(aktivitasDariDb))
+  }
+
+  // Laporan manual dari Dosen / Sarpras
+  async function buatLaporan(data, daftarFoto = []) {
+    const unggahan = await unggahFoto(daftarFoto)
+    if (unggahan.error) return { error: unggahan.error }
+    const { error } = await supabase.rpc('buat_laporan', {
+      p_fasilitas_id: Number(data.fasilitasId),
+      p_kondisi: data.kondisi,
+      p_jumlah: Number(data.jumlah),
+      p_catatan: data.catatan,
+      p_foto: unggahan.pathFoto,
+    })
+    if (error) return { error: error.code === 'P0001' ? error.message : pesanGalat(error) }
+    await Promise.all([muatLaporan(), muatAktivitas()])
+    return {}
+  }
+
+  // Sarpras memproses laporan: status 'diproses' | 'selesai' | 'ditolak'
+  async function prosesLaporan(id, status, tindakLanjut, unitIds = null, kondisiUnit = null) {
+    const { error } = await supabase.rpc('proses_laporan', {
+      p_laporan_id: Number(id),
+      p_status: status,
+      p_tindak_lanjut: tindakLanjut,
+      p_unit_ids: unitIds ? unitIds.map(Number) : null,
+      p_kondisi_unit: kondisiUnit,
+    })
+    if (error) return { error: error.code === 'P0001' ? error.message : pesanGalat(error) }
+
+    // Kondisi fasilitas & unitnya bisa ikut berubah, jadi ambil ulang
+    const l = laporan.find((x) => x.id === id)
+    if (l?.fasilitasId) {
+      const { data } = await supabase.from('unit_fasilitas').select('*').eq('fasilitas_id', Number(l.fasilitasId)).order('urutan')
+      if (data) setUnit((lama) => [...lama.filter((u) => u.fasilitasId !== l.fasilitasId), ...data.map(unitDariDb)])
+      await segarkanFasilitas(l.fasilitasId)
+    }
+    await Promise.all([muatLaporan(), muatAktivitas()])
     return {}
   }
 
@@ -542,6 +632,20 @@ export function DataProvider({ children }) {
       .limit(50)
     if (error) return { error: error.message, data: [] }
     return { data: data.map(inspeksiDariDb) }
+  }
+
+  // ===== Log riwayat sistem (khusus Sarpras) =====
+  // dari, sampai = objek Date. Mengembalikan baris log mentah dari database.
+  async function ambilLog(dari, sampai) {
+    const { data, error } = await supabase
+      .from('log_sistem')
+      .select('*')
+      .gte('waktu', dari.toISOString())
+      .lte('waktu', sampai.toISOString())
+      .order('waktu', { ascending: false })
+      .limit(3000)
+    if (error) return { error: error.message, data: [] }
+    return { data }
   }
 
   const nilai = {
@@ -566,6 +670,10 @@ export function DataProvider({ children }) {
     ambilRiwayatFasilitas,
     ubahKondisiFasilitas,
     ubahKondisiUnit,
+    laporan,
+    buatLaporan,
+    prosesLaporan,
+    ambilLog,
   }
   return <DataContext.Provider value={nilai}>{children}</DataContext.Provider>
 }

@@ -4,6 +4,8 @@ import Dashboard from './pages/Dashboard.jsx'
 import DataRuangan from './pages/DataRuangan.jsx'
 import DataFasilitas from './pages/DataFasilitas.jsx'
 import SegeraHadir from './pages/SegeraHadir.jsx'
+import Laporan from './pages/Laporan.jsx'
+import Pemeliharaan from './pages/Pemeliharaan.jsx'
 import Login from './pages/Login.jsx'
 import Pengaturan from './pages/Pengaturan.jsx'
 import RapidInspection from './pages/RapidInspection.jsx'
@@ -46,7 +48,7 @@ export default function App() {
           path="/pemeliharaan"
           element={
             <HanyaUntuk aksi="pemeliharaan">
-              <SegeraHadir judul="Pemeliharaan" />
+              <Pemeliharaan />
             </HanyaUntuk>
           }
         />
@@ -62,7 +64,7 @@ export default function App() {
           path="/laporan"
           element={
             <HanyaUntuk aksi="laporan">
-              <SegeraHadir judul="Laporan" />
+              <Laporan />
             </HanyaUntuk>
           }
         />
@@ -70,7 +72,7 @@ export default function App() {
           path="/pengaturan"
           element={
             <HanyaUntuk aksi="pengaturan">
-                <Pengaturan />
+              <Pengaturan />
             </HanyaUntuk>
           }
         />
