@@ -60,7 +60,7 @@ function persen(n, total) {
 }
 
 export default function DataRuangan() {
-  const { ruang, fasilitas, tambahRuang, ubahRuang } = useData()
+  const { ruang, fasilitas, laporan, tambahRuang, ubahRuang } = useData()
   const { bisa } = useAuth()
   const [params] = useSearchParams()
   const [cari, setCari] = useState(params.get('cari') ?? '')
@@ -94,8 +94,19 @@ export default function DataRuangan() {
   const ruangDipilih = ruangTampil.find((r) => r.id === dipilihId) ?? ruangTampil[0] ?? null
   const fasilitasRuang = ruangDipilih ? fasilitas.filter((f) => f.ruangId === ruangDipilih.id) : []
   const fasilitasBaik = fasilitasRuang.filter((f) => f.kondisi === 'baik').length
-  // Riwayat pemeliharaan belum tersimpan di database (dibuat bersama menu Pemeliharaan)
-  const riwayatRuang = []
+  // Riwayat pemeliharaan ruangan: tiket yang sedang/sudah dikerjakan
+  const riwayatRuang = ruangDipilih
+    ? laporan
+        .filter((l) => l.ruangId === ruangDipilih.id && ['diproses', 'selesai'].includes(l.status))
+        .map((l) => ({
+          id: l.id,
+          kegiatan: `${l.jenis === 'preventif' ? 'Pemeliharaan rutin' : 'Perbaikan'}: ${l.namaFasilitas}`,
+          rincian: l.hasilPerbaikan || l.tindakLanjut || l.catatan,
+          tanggal: l.selesai || l.diproses,
+          oleh: l.teknisi || l.penangan,
+          selesai: l.status === 'selesai',
+        }))
+    : []
 
   // Ringkasan di bagian atas
   const total = ruang.length
@@ -535,14 +546,17 @@ export default function DataRuangan() {
               {tab === 'riwayat' && (
                 <div className="flex flex-col gap-3">
                   {riwayatRuang.map((r, i) => (
-                    <div key={i} className="flex gap-3 items-start p-3.5 rounded-xl border border-line">
+                    <div key={r.id ?? i} className="flex gap-3 items-start p-3.5 rounded-xl border border-line">
                       <div className="flex-1">
                         <p className="text-sm font-bold">{r.kegiatan}</p>
+                        {r.rincian && <p className="text-[13px] text-slate-600">{r.rincian}</p>}
                         <p className="text-xs text-muted">
                           {r.tanggal} · {r.oleh}
                         </p>
                       </div>
-                      <StatusBadge status={r.status} ruang />
+                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${r.selesai ? 'bg-ok-soft text-ok-ink' : 'bg-sky-50 text-sky-700'}`}>
+                        {r.selesai ? 'Selesai' : 'Dikerjakan'}
+                      </span>
                     </div>
                   ))}
                   {riwayatRuang.length === 0 && (

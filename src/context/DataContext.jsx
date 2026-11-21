@@ -26,6 +26,9 @@ export function hitungStatusRuang(daftarFasilitas) {
 
 const BUCKET_FOTO = 'dokumentasi-inspeksi'
 
+// Alamat publik foto di Storage
+const urlFoto = (path) => supabase.storage.from(BUCKET_FOTO).getPublicUrl(path).data.publicUrl
+
 // Nama kondisi untuk catatan aktivitas
 const STATUS_TEKS = { baik: 'Baik', perawatan: 'Bermasalah', rusak: 'Rusak', maintenance: 'Maintenance' }
 
@@ -171,7 +174,7 @@ function laporanDariDb(l) {
     kondisi: l.kondisi,
     jumlah: l.jumlah,
     catatan: l.catatan ?? '',
-    foto: (l.foto ?? []).map((path) => supabase.storage.from(BUCKET_FOTO).getPublicUrl(path).data.publicUrl),
+    foto: (l.foto ?? []).map(urlFoto),
     status: l.status,
     pelapor: l.nama_pelapor,
     peranPelapor: l.peran_pelapor,
@@ -183,6 +186,37 @@ function laporanDariDb(l) {
     dibuatAsli: l.dibuat_pada,
     selesaiAsli: l.selesai_pada,
     unitIds: (l.laporan_unit ?? []).map((u) => String(u.unit_id)),
+    jenis: l.jenis ?? 'korektif',
+    prioritas: l.prioritas ?? 'sedang',
+    petugasVerifikasiId: l.petugas_verifikasi_id,
+    petugasVerifikasi: l.petugas_verifikasi ?? '',
+    ditugaskan: l.ditugaskan_pada ? formatTanggal(l.ditugaskan_pada) : '',
+    hasilVerifikasi: l.hasil_verifikasi,
+    catatanVerifikasi: l.catatan_verifikasi ?? '',
+    fotoVerifikasi: (l.foto_verifikasi ?? []).map(urlFoto),
+    diverifikasiOleh: l.diverifikasi_oleh ?? '',
+    diverifikasi: l.diverifikasi_pada ? formatTanggal(l.diverifikasi_pada) : '',
+    jenisTindakan: l.jenis_tindakan,
+    teknisi: l.teknisi ?? '',
+    targetSelesai: l.target_selesai, // 'YYYY-MM-DD'
+    estimasiBiaya: l.estimasi_biaya === null || l.estimasi_biaya === undefined ? null : Number(l.estimasi_biaya),
+    biayaAktual: l.biaya_aktual === null || l.biaya_aktual === undefined ? null : Number(l.biaya_aktual),
+    hasilPerbaikan: l.hasil_perbaikan ?? '',
+    fotoSesudah: (l.foto_sesudah ?? []).map(urlFoto),
+    jadwalId: l.jadwal_id ? String(l.jadwal_id) : null,
+  }
+}
+
+function jadwalDariDb(j) {
+  return {
+    id: String(j.id),
+    fasilitasId: String(j.fasilitas_id),
+    kegiatan: j.kegiatan,
+    intervalHari: j.interval_hari,
+    terakhir: j.terakhir, // 'YYYY-MM-DD' atau null
+    berikutnya: j.berikutnya,
+    aktif: j.aktif,
+    catatan: j.catatan ?? '',
   }
 }
 
@@ -205,6 +239,7 @@ export function DataProvider({ children }) {
   const [inspeksi, setInspeksi] = useState([])
   const [unit, setUnit] = useState([])
   const [laporan, setLaporan] = useState([])
+  const [jadwal, setJadwal] = useState([])
   const [memuat, setMemuat] = useState(true)
   const [galatMuat, setGalatMuat] = useState('')
 
@@ -231,7 +266,7 @@ export function DataProvider({ children }) {
       setAktivitas((hasilAktivitas.data ?? []).map(aktivitasDariDb))
       setInspeksi((hasilInspeksi.data ?? []).map(inspeksiDariDb))
       setUnit((hasilUnit.data ?? []).map(unitDariDb))
-      await muatLaporan()
+      await Promise.all([muatLaporan(), muatJadwal()])
       setMemuat(false)
     }
 
@@ -584,42 +619,129 @@ export function DataProvider({ children }) {
     if (data) setAktivitas(data.map(aktivitasDariDb))
   }
 
-  // Laporan manual dari Dosen / Sarpras
-  async function buatLaporan(data, daftarFoto = []) {
-    const unggahan = await unggahFoto(daftarFoto)
-    if (unggahan.error) return { error: unggahan.error }
-    const { error } = await supabase.rpc('buat_laporan', {
-      p_fasilitas_id: Number(data.fasilitasId),
-      p_kondisi: data.kondisi,
-      p_jumlah: Number(data.jumlah),
-      p_catatan: data.catatan,
-      p_foto: unggahan.pathFoto,
-    })
-    if (error) return { error: error.code === 'P0001' ? error.message : pesanGalat(error) }
-    await Promise.all([muatLaporan(), muatAktivitas()])
-    return {}
+  async function muatJadwal() {
+    const { data } = await supabase.from('jadwal_preventif').select('*').order('berikutnya')
+    if (data) setJadwal(data.map(jadwalDariDb))
   }
 
-  // Sarpras memproses laporan: status 'diproses' | 'selesai' | 'ditolak'
-  async function prosesLaporan(id, status, tindakLanjut, unitIds = null, kondisiUnit = null) {
-    const { error } = await supabase.rpc('proses_laporan', {
-      p_laporan_id: Number(id),
-      p_status: status,
-      p_tindak_lanjut: tindakLanjut,
-      p_unit_ids: unitIds ? unitIds.map(Number) : null,
-      p_kondisi_unit: kondisiUnit,
-    })
-    if (error) return { error: error.code === 'P0001' ? error.message : pesanGalat(error) }
-
-    // Kondisi fasilitas & unitnya bisa ikut berubah, jadi ambil ulang
-    const l = laporan.find((x) => x.id === id)
+  // ===== Pemeliharaan: alur tiket =====
+  // Setelah setiap aksi: ambil ulang tiket, aktivitas, dan kondisi fasilitas/unit yang terkait
+  async function setelahAksiTiket(laporanId) {
+    const l = laporan.find((x) => x.id === laporanId)
     if (l?.fasilitasId) {
       const { data } = await supabase.from('unit_fasilitas').select('*').eq('fasilitas_id', Number(l.fasilitasId)).order('urutan')
       if (data) setUnit((lama) => [...lama.filter((u) => u.fasilitasId !== l.fasilitasId), ...data.map(unitDariDb)])
       await segarkanFasilitas(l.fasilitasId)
     }
-    await Promise.all([muatLaporan(), muatAktivitas()])
+    await Promise.all([muatLaporan(), muatAktivitas(), muatJadwal()])
+  }
+
+  async function jalankanRpc(nama, parameter, laporanId) {
+    const { error } = await supabase.rpc(nama, parameter)
+    if (error) return { error: error.code === 'P0001' ? error.message : pesanGalat(error) }
+    await setelahAksiTiket(laporanId)
     return {}
+  }
+
+  const tugaskanVerifikasi = (id, petugasId, catatan) =>
+    jalankanRpc('tugaskan_verifikasi', { p_laporan_id: Number(id), p_petugas_id: petugasId, p_catatan: catatan }, id)
+
+  async function kirimVerifikasi(id, hasil, unitIds, catatan, daftarFoto = []) {
+    const unggahan = await unggahFoto(daftarFoto)
+    if (unggahan.error) return { error: unggahan.error }
+    return jalankanRpc(
+      'kirim_verifikasi',
+      { p_laporan_id: Number(id), p_hasil: hasil, p_unit_ids: unitIds ? unitIds.map(Number) : null, p_catatan: catatan, p_foto: unggahan.pathFoto },
+      id,
+    )
+  }
+
+  const mulaiPemeliharaan = (id, data) =>
+    jalankanRpc(
+      'mulai_pemeliharaan',
+      {
+        p_laporan_id: Number(id),
+        p_jenis_tindakan: data.jenisTindakan,
+        p_teknisi: data.teknisi,
+        p_target: data.target,
+        p_estimasi_biaya: data.estimasi === '' ? null : Number(data.estimasi),
+        p_catatan: data.catatan,
+      },
+      id,
+    )
+
+  async function tambahProgres(id, catatan, daftarFoto = []) {
+    const unggahan = await unggahFoto(daftarFoto)
+    if (unggahan.error) return { error: unggahan.error }
+    return jalankanRpc('tambah_progres', { p_laporan_id: Number(id), p_catatan: catatan, p_foto: unggahan.pathFoto }, id)
+  }
+
+  async function selesaikanPemeliharaan(id, hasil, biaya, daftarFoto = []) {
+    const unggahan = await unggahFoto(daftarFoto)
+    if (unggahan.error) return { error: unggahan.error }
+    return jalankanRpc(
+      'selesaikan_pemeliharaan',
+      { p_laporan_id: Number(id), p_hasil: hasil, p_biaya_aktual: biaya === '' ? null : Number(biaya), p_foto_sesudah: unggahan.pathFoto },
+      id,
+    )
+  }
+
+  const tolakLaporan = (id, alasan) => jalankanRpc('tolak_laporan', { p_laporan_id: Number(id), p_alasan: alasan }, id)
+  const ubahPrioritas = (id, prioritas) => jalankanRpc('ubah_prioritas', { p_laporan_id: Number(id), p_prioritas: prioritas }, id)
+
+  // Catatan progres satu tiket (urut dari yang terlama)
+  async function ambilProgres(id) {
+    const { data, error } = await supabase.from('laporan_progres').select('*').eq('laporan_id', Number(id)).order('waktu')
+    if (error) return { error: error.message, data: [] }
+    return { data: data.map((p) => ({ id: String(p.id), waktu: formatTanggal(p.waktu), oleh: p.oleh, catatan: p.catatan, foto: (p.foto ?? []).map(urlFoto) })) }
+  }
+
+  // ===== Jadwal pemeliharaan preventif =====
+  // Satu jadwal dibuat untuk setiap fasilitas terpilih (mis. semua AC di Gedung 4)
+  async function tambahJadwal(daftarFasilitasId, data) {
+    const { error } = await supabase.from('jadwal_preventif').insert(
+      daftarFasilitasId.map((fasilitasId) => ({
+        fasilitas_id: Number(fasilitasId),
+        kegiatan: data.kegiatan.trim(),
+        interval_hari: Number(data.intervalHari),
+        berikutnya: data.berikutnya,
+        catatan: data.catatan.trim() || null,
+      })),
+    )
+    if (error) return { error: pesanGalat(error) }
+    await muatJadwal()
+    await catat(`Jadwal preventif "${data.kegiatan.trim()}" dibuat untuk ${daftarFasilitasId.length} fasilitas`)
+    return {}
+  }
+
+  async function ubahJadwal(id, data) {
+    const { error } = await supabase
+      .from('jadwal_preventif')
+      .update({
+        kegiatan: data.kegiatan.trim(),
+        interval_hari: Number(data.intervalHari),
+        berikutnya: data.berikutnya,
+        catatan: data.catatan.trim() || null,
+        aktif: data.aktif,
+      })
+      .eq('id', Number(id))
+    if (error) return { error: pesanGalat(error) }
+    await muatJadwal()
+    return {}
+  }
+
+  async function hapusJadwal(id) {
+    const { error } = await supabase.from('jadwal_preventif').delete().eq('id', Number(id))
+    if (error) return { error: pesanGalat(error) }
+    await muatJadwal()
+    return {}
+  }
+
+  async function buatTiketPreventif(jadwalId) {
+    const { data, error } = await supabase.rpc('buat_tiket_preventif', { p_jadwal_id: Number(jadwalId) })
+    if (error) return { error: error.code === 'P0001' ? error.message : pesanGalat(error) }
+    await Promise.all([muatLaporan(), muatAktivitas()])
+    return { id: String(data) }
   }
 
   // Riwayat inspeksi satu ruangan, lengkap dengan detail fasilitasnya
@@ -671,8 +793,19 @@ export function DataProvider({ children }) {
     ubahKondisiFasilitas,
     ubahKondisiUnit,
     laporan,
-    buatLaporan,
-    prosesLaporan,
+    jadwal,
+    tugaskanVerifikasi,
+    kirimVerifikasi,
+    mulaiPemeliharaan,
+    tambahProgres,
+    selesaikanPemeliharaan,
+    tolakLaporan,
+    ubahPrioritas,
+    ambilProgres,
+    tambahJadwal,
+    ubahJadwal,
+    hapusJadwal,
+    buatTiketPreventif,
     ambilLog,
   }
   return <DataContext.Provider value={nilai}>{children}</DataContext.Provider>

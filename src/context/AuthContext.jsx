@@ -19,9 +19,8 @@ export const NAMA_PERAN = {
 export const DAFTAR_AKSI = [
   { kode: 'kelolaData', label: 'Tambah, ubah, hapus ruangan dan fasilitas' },
   { kode: 'rapidInspection', label: 'Melakukan rapid inspection' },
-  { kode: 'lapor', label: 'Melaporkan kerusakan fasilitas' },
   { kode: 'laporan', label: 'Laporan rekap dan log riwayat sistem' },
-  { kode: 'pemeliharaan', label: 'Pemeliharaan (tindak lanjut kerusakan)' },
+  { kode: 'pemeliharaan', label: 'Pemeliharaan (PKTL: verifikasi lapangan yang ditugaskan)' },
   { kode: 'pengaturan', label: 'Pengaturan dan akses pengguna' },
 ]
 
@@ -29,9 +28,8 @@ export const DAFTAR_AKSI = [
 export const HAK_AKSES = {
   kelolaData: ['sarpras'],
   rapidInspection: ['dosen', 'pktl', 'sarpras'],
-  lapor: ['dosen', 'sarpras'],
   laporan: ['sarpras'],
-  pemeliharaan: ['sarpras'],
+  pemeliharaan: ['sarpras', 'pktl'],
   pengaturan: ['sarpras'],
 }
 

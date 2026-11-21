@@ -22,6 +22,8 @@ const tglPendek = (d) => d.toLocaleDateString('id-ID', { day: 'numeric', month: 
 const tglPanjang = (d) => d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
 const waktuLengkap = (iso) =>
   new Date(iso).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+const rupiah = (n) =>
+  n === null || n === undefined ? '-' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
 const keInputTanggal = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
 
 function teksDurasiJam(jam) {
@@ -68,7 +70,8 @@ const PILIHAN_PERIODE = [
 const WARNA = { baik: '#16a34a', perawatan: '#f59e0b', rusak: '#dc2626', belum: '#94a3b8', maintenance: '#0ea5e9', utama: '#8f1d2c' }
 
 const HASIL_RUANGAN = { baik: 'Baik', bermasalah: 'Bermasalah', tidak_dapat_digunakan: 'Tidak Dapat Digunakan' }
-const STATUS_LAPORAN = { baru: 'Baru', diproses: 'Diproses', selesai: 'Selesai', ditolak: 'Ditolak' }
+const STATUS_LAPORAN = { baru: 'Baru', verifikasi: 'Verifikasi', terverifikasi: 'Terverifikasi', diproses: 'Diproses', selesai: 'Selesai', ditolak: 'Ditolak' }
+const BELUM_SELESAI = ['baru', 'verifikasi', 'terverifikasi', 'diproses']
 
 // ===================== Log: teks yang mudah dibaca =====================
 
@@ -88,9 +91,13 @@ const LABEL_KOLOM = {
   penangan: 'Penangan', peran: 'Peran', aktif: 'Aktif', kapasitas: 'Kapasitas', satuan_kapasitas: 'Satuan kapasitas', jenis: 'Jenis',
   lantai: 'Lantai', luas: 'Luas', penanggung_jawab: 'Penanggung jawab', deskripsi: 'Deskripsi', gedung: 'Gedung', ruangan: 'Ruangan',
   kampus: 'Kampus', kondisi_ruangan: 'Kondisi ruangan', foto: 'Foto', inspeksi_id: 'Inspeksi', selesai_pada: 'Selesai pada',
-  diproses_pada: 'Diproses pada', urutan: 'Urutan', email: 'Email',
+  diproses_pada: 'Diproses pada', urutan: 'Urutan', email: 'Email', prioritas: 'Prioritas', petugas_verifikasi: 'Petugas verifikasi',
+  hasil_verifikasi: 'Hasil verifikasi', catatan_verifikasi: 'Catatan verifikasi', foto_verifikasi: 'Foto verifikasi', diverifikasi_oleh: 'Diverifikasi oleh',
+  diverifikasi_pada: 'Diverifikasi pada', ditugaskan_pada: 'Ditugaskan pada', jenis_tindakan: 'Jenis tindakan', teknisi: 'Teknisi',
+  target_selesai: 'Target selesai', estimasi_biaya: 'Estimasi biaya', biaya_aktual: 'Biaya aktual', hasil_perbaikan: 'Hasil perbaikan',
+  foto_sesudah: 'Foto sesudah',
 }
-const KOLOM_DISEMBUNYIKAN = ['id', 'ruangan_id', 'fasilitas_id', 'pelapor_id', 'pemeriksa_id', 'pengguna_id', 'oleh_id']
+const KOLOM_DISEMBUNYIKAN = ['id', 'ruangan_id', 'fasilitas_id', 'pelapor_id', 'pemeriksa_id', 'pengguna_id', 'oleh_id', 'petugas_verifikasi_id', 'jadwal_id']
 
 function nilaiLog(kolom, v) {
   if (v === null || v === undefined || v === '') return '-'
@@ -98,7 +105,9 @@ function nilaiLog(kolom, v) {
   if (kolom === 'kondisi_ruangan') return HASIL_RUANGAN[v] ?? v
   if (kolom === 'status') return STATUS_LAPORAN[v] ?? v
   if (kolom === 'peran') return NAMA_PERAN[v] ?? v
-  if (kolom === 'foto') return `${v.length} foto`
+  if (kolom === 'foto' || kolom.startsWith('foto_')) return `${v.length} foto`
+  if (kolom === 'hasil_verifikasi') return v === 'valid' ? 'Kerusakan benar ada' : 'Bukan kerusakan'
+  if (kolom === 'estimasi_biaya' || kolom === 'biaya_aktual') return rupiah(v)
   if (kolom.endsWith('_pada')) return waktuLengkap(v)
   if (typeof v === 'boolean') return v ? 'Ya' : 'Tidak'
   return String(v)
@@ -107,8 +116,8 @@ function nilaiLog(kolom, v) {
 // Kalimat kegiatan, contoh "Melakukan inspeksi" / "Mengubah"
 function teksAksi(log) {
   if (log.modul === 'inspeksi' && log.aksi === 'tambah') return 'Melakukan inspeksi'
-  if (log.modul === 'laporan' && log.aksi === 'tambah') return 'Membuat laporan kerusakan'
-  if (log.modul === 'laporan' && log.data_baru?.status) return `Mengubah status laporan`
+  if (log.modul === 'laporan' && log.aksi === 'tambah') return log.data_baru?.jenis === 'preventif' ? 'Membuat tiket pemeliharaan rutin' : 'Membuat tiket kerusakan'
+  if (log.modul === 'laporan' && log.data_baru?.status) return `Mengubah status tiket menjadi ${STATUS_LAPORAN[log.data_baru.status] ?? log.data_baru.status}`
   return { tambah: 'Menambah', ubah: 'Mengubah', hapus: 'Menghapus' }[log.aksi] ?? log.aksi
 }
 
@@ -229,8 +238,11 @@ export default function Laporan() {
     }
   })
 
-  // ----- Kerusakan & pemeliharaan (laporan dibuat dalam periode) -----
-  const laporanPeriode = laporan.filter((l) => dalamPeriode(l.dibuatAsli) && cocokLokasi(l.ruangId))
+  // ----- Kerusakan & pemeliharaan (tiket dibuat dalam periode) -----
+  const tiketPeriode = laporan.filter((l) => dalamPeriode(l.dibuatAsli) && cocokLokasi(l.ruangId))
+  const laporanPeriode = tiketPeriode.filter((l) => l.jenis !== 'preventif') // temuan kerusakan (korektif)
+  const preventifPeriode = tiketPeriode.filter((l) => l.jenis === 'preventif')
+  const biayaAktual = tiketPeriode.filter((l) => l.status === 'selesai').reduce((n, l) => n + (l.biayaAktual ?? 0), 0)
   const kelompokkan = (kunci) => {
     const hasil = {}
     laporanPeriode.forEach((l) => {
@@ -257,7 +269,7 @@ export default function Laporan() {
     { label: 'Inspeksi', nilai: inspeksiPeriode.length, ket: `${ruangTerinspeksi.size} ruangan berbeda`, ikon: ScanSearch, warna: 'bg-sky-50 text-sky-700' },
     { label: 'Cakupan Inspeksi', nilai: persen(cakupanTerinspeksi, ruangBerfasilitas.length), ket: `${cakupanTerinspeksi} dari ${ruangBerfasilitas.length} ruangan`, ikon: Percent, warna: 'bg-ok-soft text-ok' },
     { label: 'Rata-rata Waktu Inspeksi', nilai: rataMenit === null ? '-' : `${angka(rataMenit)} mnt`, ket: 'per ruangan', ikon: Timer, warna: 'bg-slate-100 text-slate-600' },
-    { label: 'Temuan Kerusakan', nilai: laporanPeriode.length, ket: `${hitungStatus('baru') + hitungStatus('diproses')} belum selesai`, ikon: AlertTriangle, warna: 'bg-warn-soft text-amber-700' },
+    { label: 'Temuan Kerusakan', nilai: laporanPeriode.length, ket: `${laporanPeriode.filter((l) => BELUM_SELESAI.includes(l.status)).length} belum selesai`, ikon: AlertTriangle, warna: 'bg-warn-soft text-amber-700' },
     { label: 'Selesai Diperbaiki', nilai: hitungStatus('selesai'), ket: `rata-rata ${teksDurasiJam(rataSelesaiJam)}`, ikon: CheckCircle2, warna: 'bg-ok-soft text-ok' },
   ]
 
@@ -289,9 +301,11 @@ export default function Laporan() {
         [judul('Kondisi ruangan saat ini'), judul('Jumlah')],
         ...kondisiRuang.map((k) => baris(k.nama, k.nilai)),
         [null, null],
-        [judul('Status pemeliharaan'), judul('Jumlah')],
+        [judul('Status tiket kerusakan'), judul('Jumlah')],
         ...Object.entries(STATUS_LAPORAN).map(([k, label]) => baris(label, hitungStatus(k))),
         baris('Rata-rata waktu penyelesaian', teksDurasiJam(rataSelesaiJam)),
+        baris('Tiket pemeliharaan rutin (preventif)', preventifPeriode.length),
+        baris('Total biaya pemeliharaan (selesai)', rupiah(biayaAktual)),
         [null, null],
         [judul('Fasilitas paling sering rusak'), judul('Jumlah laporan')],
         ...palingSeringRusak.map((x) => baris(x.nama, x.jumlah)),
@@ -314,12 +328,15 @@ export default function Laporan() {
       ]
 
       const lembarKerusakan = [
-        ['No.', 'Dilaporkan', 'Ruangan', 'Fasilitas', 'Kategori', 'Kondisi', 'Jumlah', 'Sumber', 'Pelapor', 'Status', 'Tindak lanjut', 'Selesai', 'Lama penyelesaian (jam)'].map(judul),
-        ...laporanPeriode.map((l) =>
-          baris(Number(l.id), l.dibuat, ruangById[l.ruangId]?.nama ?? '-', l.namaFasilitas, fasilitasById[l.fasilitasId]?.kategori ?? '-',
-            STATUS[l.kondisi].label, l.jumlah, l.sumber === 'inspeksi' ? 'Rapid Inspection' : 'Manual', l.pelapor, STATUS_LAPORAN[l.status],
-            l.tindakLanjut || '-', l.selesai || '-',
-            l.status === 'selesai' && l.selesaiAsli ? Math.round(((new Date(l.selesaiAsli) - new Date(l.dibuatAsli)) / 3600000) * 10) / 10 : null),
+        ['No.', 'Jenis', 'Dibuat', 'Ruangan', 'Fasilitas', 'Kategori', 'Kondisi', 'Jumlah', 'Sumber', 'Prioritas', 'Status', 'Verifikasi', 'Teknisi', 'Target', 'Hasil / tindak lanjut', 'Selesai', 'Lama penyelesaian (jam)', 'Biaya aktual (Rp)'].map(judul),
+        ...tiketPeriode.map((l) =>
+          baris(Number(l.id), l.jenis === 'preventif' ? 'Preventif' : 'Korektif', l.dibuat, ruangById[l.ruangId]?.nama ?? '-', l.namaFasilitas,
+            fasilitasById[l.fasilitasId]?.kategori ?? '-', l.kondisi ? STATUS[l.kondisi].label : '-', l.jumlah,
+            { inspeksi: 'Rapid Inspection', jadwal: 'Jadwal preventif', manual: 'Manual' }[l.sumber], l.prioritas, STATUS_LAPORAN[l.status],
+            l.diverifikasiOleh ? `${l.hasilVerifikasi === 'valid' ? 'Valid' : 'Bukan kerusakan'} (${l.diverifikasiOleh})` : '-',
+            l.teknisi || '-', l.targetSelesai ?? '-', l.hasilPerbaikan || l.tindakLanjut || '-', l.selesai || '-',
+            l.status === 'selesai' && l.selesaiAsli ? Math.round(((new Date(l.selesaiAsli) - new Date(l.dibuatAsli)) / 3600000) * 10) / 10 : null,
+            l.biayaAktual),
         ),
       ]
 
@@ -336,7 +353,7 @@ export default function Laporan() {
         { data: ringkasan, sheet: 'Ringkasan', columns: lebar(34, 50) },
         { data: lembarRuangan, sheet: 'Kondisi Ruangan', columns: lebar(10, 10, 28, 22, 16, 18, 30), stickyRowsCount: 1 },
         { data: lembarInspeksi, sheet: 'Inspeksi', columns: lebar(20, 22, 20, 18, 22, 14, 8, 30), stickyRowsCount: 1 },
-        { data: lembarKerusakan, sheet: 'Kerusakan', columns: lebar(6, 20, 22, 20, 14, 12, 8, 16, 18, 10, 30, 20, 14), stickyRowsCount: 1 },
+        { data: lembarKerusakan, sheet: 'Pemeliharaan', columns: lebar(6, 10, 20, 16, 18, 12, 12, 8, 16, 10, 13, 26, 18, 12, 32, 20, 14, 16), stickyRowsCount: 1 },
         { data: lembarLog, sheet: 'Log Riwayat', columns: lebar(20, 20, 16, 22, 26, 36, 60), stickyRowsCount: 1 },
       ]).toFile(`Laporan Fasilitas ${keInputTanggal(dari)} sd ${keInputTanggal(sampai)}.xlsx`)
     } finally {
@@ -385,8 +402,8 @@ ${tabel(['Gedung', 'Temuan'], kerusakanPerGedung.map((x) => [x.nama, x.jumlah]))
 </div>
 ${tabel(['Fasilitas paling sering rusak', 'Jumlah laporan'], palingSeringRusak.map((x) => [x.nama, x.jumlah]))}
 <h2>4. Pemeliharaan</h2>
-${tabel(['Baru', 'Diproses', 'Selesai', 'Ditolak', 'Rata-rata penyelesaian'], [[hitungStatus('baru'), hitungStatus('diproses'), hitungStatus('selesai'), hitungStatus('ditolak'), teksDurasiJam(rataSelesaiJam)]])}
-${tabel(['No.', 'Dilaporkan', 'Ruangan', 'Fasilitas', 'Kondisi', 'Status', 'Tindak lanjut'], laporanPeriode.slice(0, 100).map((l) => [`#${l.id}`, l.dibuat, ruangById[l.ruangId]?.nama, l.namaFasilitas, `${STATUS[l.kondisi].label} ${l.jumlah} unit`, STATUS_LAPORAN[l.status], l.tindakLanjut || '-']))}
+${tabel(['Baru', 'Verifikasi', 'Diproses', 'Selesai', 'Ditolak', 'Rata-rata penyelesaian', 'Preventif', 'Total biaya'], [[hitungStatus('baru'), hitungStatus('verifikasi') + hitungStatus('terverifikasi'), hitungStatus('diproses'), hitungStatus('selesai'), hitungStatus('ditolak'), teksDurasiJam(rataSelesaiJam), preventifPeriode.length, rupiah(biayaAktual)]])}
+${tabel(['No.', 'Dibuat', 'Ruangan', 'Fasilitas', 'Temuan', 'Status', 'Teknisi', 'Hasil / tindak lanjut', 'Biaya'], tiketPeriode.slice(0, 100).map((l) => [`#${l.id}`, l.dibuat, ruangById[l.ruangId]?.nama, l.namaFasilitas, l.kondisi ? `${STATUS[l.kondisi].label} ${l.jumlah} unit` : 'Preventif', STATUS_LAPORAN[l.status], l.teknisi || '-', l.hasilPerbaikan || l.tindakLanjut || '-', rupiah(l.biayaAktual)]))}
 <h2>5. Log Riwayat Sistem (${Math.min(logLokasi.length, 150)} dari ${logLokasi.length} kegiatan terbaru)</h2>
 ${tabel(['Waktu', 'Pengguna', 'Kegiatan', 'Data', 'Rincian'], logLokasi.slice(0, 150).map((x) => [waktuLengkap(x.waktu), `${x.nama_pengguna}${x.peran ? ` (${NAMA_PERAN[x.peran] ?? x.peran})` : ''}`, `${teksAksi(x)} · ${MODUL[x.modul] ?? x.modul}`, x.objek, rincianLog(x).join('; ')]))}
 <p class="kaki">Dicetak dari Dashboard Monitoring Kondisi Fasilitas Ruang Kuliah Berbasis Rapid Inspection.</p>
@@ -562,6 +579,7 @@ ${tabel(['Waktu', 'Pengguna', 'Kegiatan', 'Data', 'Rincian'], logLokasi.slice(0,
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {[
                   ['Baru', hitungStatus('baru'), 'bg-bad-soft text-bad-ink'],
+                  ['Verifikasi', hitungStatus('verifikasi') + hitungStatus('terverifikasi'), 'bg-violet-50 text-violet-700'],
                   ['Diproses', hitungStatus('diproses'), 'bg-sky-50 text-sky-700'],
                   ['Selesai', hitungStatus('selesai'), 'bg-ok-soft text-ok-ink'],
                   ['Ditolak', hitungStatus('ditolak'), 'bg-slate-100 text-slate-600'],
@@ -574,14 +592,24 @@ ${tabel(['Waktu', 'Pengguna', 'Kegiatan', 'Data', 'Rincian'], logLokasi.slice(0,
               </div>
               <div className="flex items-center gap-3 p-3.5 rounded-xl border border-line">
                 <Wrench size={20} className="text-primary" />
-                <span className="flex-1 text-sm">Rata-rata waktu penyelesaian (laporan dibuat → selesai)</span>
+                <span className="flex-1 text-sm">Rata-rata waktu penyelesaian (temuan → selesai)</span>
                 <b>{teksDurasiJam(rataSelesaiJam)}</b>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="p-3.5 rounded-xl border border-line">
+                  <p className="text-xs text-muted">Pemeliharaan rutin (preventif)</p>
+                  <b>{preventifPeriode.length} tiket</b>
+                </div>
+                <div className="p-3.5 rounded-xl border border-line">
+                  <p className="text-xs text-muted">Total biaya (selesai)</p>
+                  <b>{rupiah(biayaAktual)}</b>
+                </div>
               </div>
               <TabelKecil
                 kepala={['No.', 'Fasilitas', 'Ruangan', 'Status']}
-                isi={laporanPeriode.slice(0, 8).map((l) => [`#${l.id}`, l.namaFasilitas, ruangById[l.ruangId]?.nama ?? '-', STATUS_LAPORAN[l.status]])}
+                isi={tiketPeriode.slice(0, 8).map((l) => [`#${l.id}`, l.namaFasilitas, ruangById[l.ruangId]?.nama ?? '-', STATUS_LAPORAN[l.status]])}
               />
-              {laporanPeriode.length > 8 && <p className="text-xs text-muted">Daftar lengkap ada di file Excel (lembar Kerusakan).</p>}
+              {tiketPeriode.length > 8 && <p className="text-xs text-muted">Daftar lengkap ada di file Excel (lembar Pemeliharaan).</p>}
             </Kotak>
           </div>
         </>
