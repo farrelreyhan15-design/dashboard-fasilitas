@@ -33,7 +33,7 @@ export default function Login() {
         <div className="bg-primary text-white px-7 py-8 flex flex-col gap-3">
           <Building2 size={44} strokeWidth={1.6} />
           <h1 className="text-2xl font-extrabold leading-tight">Facility Monitoring</h1>
-          <p className="text-sm text-white/80">Monitoring kondisi fasilitas ruang kuliah Gedung 4 UISI</p>
+          <p className="text-sm text-white/80">Monitoring Kondisi Fasilitas Ruang Kuliah UISI</p>
         </div>
 
         <form onSubmit={kirim} className="px-7 py-7 flex flex-col gap-4">
