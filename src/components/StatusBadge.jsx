@@ -1,5 +1,5 @@
 import { CheckCircle2, AlertTriangle, XCircle, Clock } from 'lucide-react'
-import { STATUS } from '../data/dataAwal.js'
+import { STATUS } from '../data/konstanta.js'
 
 const IKON = { baik: CheckCircle2, perawatan: AlertTriangle, rusak: XCircle, belum: Clock }
 

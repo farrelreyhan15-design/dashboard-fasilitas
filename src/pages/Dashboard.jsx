@@ -3,12 +3,13 @@ import { Link } from 'react-router-dom'
 import { Plus, Search, LayoutList, CheckCircle2, AlertTriangle, XCircle, Briefcase } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import Header from '../components/Header.jsx'
+import InfoMuat from '../components/InfoMuat.jsx'
 import StatusBadge from '../components/StatusBadge.jsx'
-import { tombolUtama } from '../components/Modal.jsx'
+import { tombolUtama, gayaInput } from '../components/Modal.jsx'
 import { useData } from '../context/DataContext.jsx'
+import { DAFTAR_KAMPUS, gedungDiKampus, teksLokasi } from '../data/konstanta.js'
 import { useAuth } from '../context/AuthContext.jsx'
 
-const FILTER_LANTAI = ['Semua', 'Lantai 1', 'Lantai 2', 'Lantai 3']
 
 function persen(n, total) {
   if (!total) return '0%'
@@ -18,7 +19,8 @@ function persen(n, total) {
 export default function Dashboard() {
   const { ruang, fasilitas, aktivitas } = useData()
   const { bisa } = useAuth()
-  const [lantai, setLantai] = useState('Semua')
+  const [kampus, setKampus] = useState('Semua')
+  const [gedung, setGedung] = useState('Semua')
   const [cari, setCari] = useState('')
 
   const total = ruang.length
@@ -47,10 +49,11 @@ export default function Dashboard() {
     () =>
       ruang.filter(
         (r) =>
-          (lantai === 'Semua' || `Lantai ${r.lantai}` === lantai) &&
-          (r.nama + r.kode).toLowerCase().includes(cari.toLowerCase()),
+          (kampus === 'Semua' || r.kampus === kampus) &&
+          (gedung === 'Semua' || r.gedung === gedung) &&
+          r.nama.toLowerCase().includes(cari.toLowerCase()),
       ),
-    [ruang, lantai, cari],
+    [ruang, kampus, gedung, cari],
   )
 
   const perluTindakan = fasilitas
@@ -59,7 +62,8 @@ export default function Dashboard() {
 
   return (
     <>
-      <Header judul="Dashboard Monitoring" subjudul="Pemantauan kondisi ruangan dan fasilitas Gedung 4 secara real-time" />
+      <Header judul="Dashboard Monitoring" subjudul="Pemantauan kondisi ruangan dan fasilitas UISI secara real-time" />
+      <InfoMuat />
 
       {/* Kartu ringkasan */}
       <section aria-label="Ringkasan" className="grid gap-3.5 grid-cols-[repeat(auto-fit,minmax(200px,1fr))]">
@@ -91,26 +95,32 @@ export default function Dashboard() {
           </div>
 
           <div className="flex flex-wrap gap-2.5 items-center">
-            <div className="flex flex-wrap gap-1.5 p-1 border border-line rounded-xl">
-              {FILTER_LANTAI.map((l) => (
-                <button
-                  key={l}
-                  type="button"
-                  onClick={() => setLantai(l)}
-                  className={`min-h-9 px-3.5 rounded-lg text-[13px] font-semibold ${
-                    lantai === l ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  {l}
-                </button>
+            <select
+              aria-label="Filter kampus"
+              value={kampus}
+              onChange={(e) => {
+                setKampus(e.target.value)
+                setGedung('Semua')
+              }}
+              className={`${gayaInput} sm:w-40`}
+            >
+              <option value="Semua">Semua kampus</option>
+              {DAFTAR_KAMPUS.map((k) => (
+                <option key={k}>{k}</option>
               ))}
-            </div>
+            </select>
+            <select aria-label="Filter gedung" value={gedung} onChange={(e) => setGedung(e.target.value)} className={`${gayaInput} sm:w-40`}>
+              <option value="Semua">Semua gedung</option>
+              {gedungDiKampus(ruang, kampus).map((g) => (
+                <option key={g}>{g}</option>
+              ))}
+            </select>
             <label className="flex-[1_1_220px] flex items-center gap-2.5 min-h-11 px-3.5 border border-slate-200 rounded-xl text-muted">
               <Search size={18} />
               <input
                 type="search"
                 aria-label="Cari ruangan"
-                placeholder="Cari ruangan atau kode..."
+                placeholder="Cari nama ruangan..."
                 value={cari}
                 onChange={(e) => setCari(e.target.value)}
                 className="flex-1 min-w-0 bg-transparent outline-none text-sm text-ink"
@@ -122,7 +132,7 @@ export default function Dashboard() {
             {ruangTampil.map((r) => (
               <Link
                 key={r.id}
-                to={`/ruangan?cari=${r.kode}`}
+                to={`/ruangan?cari=${encodeURIComponent(r.nama)}`}
                 className={`flex flex-col gap-2.5 p-3.5 border rounded-xl hover:border-primary hover:shadow-sm transition ${
                   r.baru ? 'border-ok bg-ok-soft/40' : 'border-line bg-white'
                 }`}
@@ -130,15 +140,19 @@ export default function Dashboard() {
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <p className="font-bold">{r.nama}</p>
-                    <p className="text-xs text-muted">GD-04 | Lantai {r.lantai}</p>
+                    <p className="text-xs text-muted">
+                      {teksLokasi(r)} · {r.jenis}
+                    </p>
                   </div>
                   <StatusBadge status={r.status} />
                 </div>
                 <div className="flex flex-wrap gap-1.5 text-xs">
                   <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">{r.jumlahFasilitas} fasilitas</span>
-                  <span className={`px-2 py-0.5 rounded-md bg-slate-100 ${r.jumlahMasalah ? 'text-bad-ink' : 'text-ok-ink'}`}>
-                    {r.jumlahMasalah ? `${r.jumlahMasalah} bermasalah` : 'Tidak ada masalah'}
-                  </span>
+                  {r.jumlahFasilitas > 0 && (
+                    <span className={`px-2 py-0.5 rounded-md bg-slate-100 ${r.jumlahMasalah ? 'text-bad-ink' : 'text-ok-ink'}`}>
+                      {r.jumlahMasalah ? `${r.jumlahMasalah} bermasalah` : 'Tidak ada masalah'}
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-muted">Inspeksi terakhir: {r.inspeksiTerakhir ?? 'belum ada'}</p>
               </Link>
@@ -154,7 +168,7 @@ export default function Dashboard() {
             <div className="h-52">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={dataGrafik} dataKey="nilai" nameKey="nama" innerRadius="60%" outerRadius="90%" paddingAngle={2}>
+                  <Pie data={dataGrafik} dataKey="nilai" nameKey="nama" innerRadius="60%" outerRadius="90%" paddingAngle={dataGrafik.length > 1 ? 2 : 0}>
                     {dataGrafik.map((d) => (
                       <Cell key={d.nama} fill={d.warna} />
                     ))}
@@ -197,7 +211,13 @@ export default function Dashboard() {
                 <StatusBadge status={f.kondisi} />
               </div>
             ))}
-            {perluTindakan.length === 0 && <p className="text-sm text-muted">Semua fasilitas dalam kondisi baik.</p>}
+            {perluTindakan.length === 0 && (
+              <p className="text-sm text-muted">
+                {fasilitas.length === 0
+                  ? 'Belum ada data fasilitas. Tambahkan lewat menu Data Fasilitas.'
+                  : 'Semua fasilitas dalam kondisi baik.'}
+              </p>
+            )}
           </section>
 
           {/* Aktivitas terbaru */}

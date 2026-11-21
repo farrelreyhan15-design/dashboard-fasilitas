@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Plus, Search, Pencil, Trash2, QrCode, DoorOpen, CheckCircle2, X } from 'lucide-react'
 import Header from '../components/Header.jsx'
+import InfoMuat from '../components/InfoMuat.jsx'
 import StatusBadge from '../components/StatusBadge.jsx'
 import Modal, { gayaInput, gayaLabel, tombolUtama, tombolKedua } from '../components/Modal.jsx'
 import { useData } from '../context/DataContext.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
-import { KATEGORI, SATUAN, STATUS } from '../data/dataAwal.js'
+import { KATEGORI, SATUAN, STATUS, teksLokasi, teksKapasitas, buatId } from '../data/konstanta.js'
 
 const FORM_KOSONG = { nama: '', kategori: 'Elektronik', jumlah: '1', satuan: 'unit', kondisi: 'baik' }
 
@@ -18,7 +19,7 @@ function singkatan(nama) {
 
 export default function DataFasilitas() {
   const { ruang, fasilitas, tambahFasilitas, hapusFasilitas } = useData()
-    const { bisa } = useAuth()
+  const { bisa } = useAuth()
   const [params, setParams] = useSearchParams()
   const ruangId = params.get('ruang') ?? ruang[0]?.id
   const ruangAktif = ruang.find((r) => r.id === ruangId) ?? ruang[0]
@@ -28,6 +29,7 @@ export default function DataFasilitas() {
   const [form, setForm] = useState(FORM_KOSONG)
   const [error, setError] = useState('')
   const [pesan, setPesan] = useState('')
+  const [menyimpan, setMenyimpan] = useState(false)
 
   const milikRuang = fasilitas.filter((f) => f.ruangId === ruangAktif?.id)
   const ubah = (kolom) => (e) => setForm({ ...form, [kolom]: e.target.value })
@@ -35,12 +37,13 @@ export default function DataFasilitas() {
   // Pratinjau kode aset otomatis
   const singkat = form.nama.trim() ? singkatan(form.nama) : 'XXX'
   const urutan = String(milikRuang.filter((f) => f.kodeAset.includes(`-${singkat}-`)).length + 1).padStart(2, '0')
-  const kodeAset = `GD04-${ruangAktif?.kode.replace('.', '')}-${singkat}-${urutan}`
+  const kodeAset = `${buatId(ruangAktif?.nama ?? '').toUpperCase()}-${singkat}-${urutan}`
 
-  function simpan() {
+  async function simpan() {
     if (!form.nama.trim() || !(Number(form.jumlah) > 0)) return setError('Nama fasilitas dan jumlah wajib diisi.')
-    tambahFasilitas({
-      id: `${ruangAktif.id}-${singkat}-${Date.now()}`,
+    setError('')
+    setMenyimpan(true)
+    const hasil = await tambahFasilitas({
       ruangId: ruangAktif.id,
       nama: form.nama.trim(),
       kategori: form.kategori,
@@ -49,14 +52,23 @@ export default function DataFasilitas() {
       kondisi: form.kondisi,
       kodeAset,
     })
+    setMenyimpan(false)
+    if (hasil.error) return setError(hasil.error)
     setPesan(`${form.jumlah} ${form.satuan} ${form.nama.trim()} ditambahkan ke ${ruangAktif.nama}. Status ruangan di dashboard ikut diperbarui.`)
     setFormTerbuka(false)
+  }
+
+  async function hapus(f) {
+    if (!window.confirm(`Hapus ${f.nama} (${f.kodeAset}) dari ${ruangAktif.nama}?`)) return
+    const hasil = await hapusFasilitas(f.id)
+    setPesan(hasil.error ?? `${f.nama} dihapus dari ${ruangAktif.nama}.`)
   }
 
   if (!ruangAktif) {
     return (
       <>
         <Header judul="Data Fasilitas" subjudul="Belum ada ruangan" />
+        <InfoMuat />
         <p className="text-muted">Tambahkan ruangan terlebih dahulu di menu Data Ruangan.</p>
       </>
     )
@@ -65,6 +77,7 @@ export default function DataFasilitas() {
   return (
     <>
       <Header judul="Data Fasilitas" subjudul="Daftar fasilitas di setiap ruangan, lengkap dengan kode aset dan kondisi terakhir" />
+      <InfoMuat />
 
       {pesan && (
         <div role="status" className="flex items-center gap-3 p-3.5 rounded-xl bg-ok-soft border border-green-200 text-ok-ink">
@@ -106,13 +119,13 @@ export default function DataFasilitas() {
                       setPesan('')
                     }}
                     className={`flex items-center justify-between gap-2 min-h-13 px-3 py-2 rounded-xl text-left ${
-                      aktif ? 'border-2 border-primary bg-blue-50' : 'border border-line bg-white hover:bg-slate-50'
+                      aktif ? 'border-2 border-primary bg-primary-soft' : 'border border-line bg-white hover:bg-slate-50'
                     }`}
                   >
                     <span>
                       <span className="block text-sm font-bold">{r.nama}</span>
                       <span className="block text-xs text-muted">
-                        Lantai {r.lantai} · {r.jumlahFasilitas} fasilitas
+                        {teksLokasi(r)} · {r.jumlahFasilitas} fasilitas
                       </span>
                     </span>
                     <span className={`size-2.5 rounded-full ${STATUS[r.status].dot}`} />
@@ -134,8 +147,7 @@ export default function DataFasilitas() {
                   {ruangAktif.nama} <StatusBadge status={ruangAktif.status} />
                 </p>
                 <p className="text-[13px] text-muted">
-                  GD-04 | Lantai {ruangAktif.lantai} | {ruangAktif.jenis}
-                  {ruangAktif.kapasitas ? ` | Kapasitas: ${ruangAktif.kapasitas} orang` : ''}
+                  {teksLokasi(ruangAktif)} | {ruangAktif.jenis} | Kapasitas: {teksKapasitas(ruangAktif)}
                 </p>
               </div>
             </div>
@@ -164,7 +176,7 @@ export default function DataFasilitas() {
               <table className="w-full min-w-[820px] text-sm border-collapse">
                 <thead>
                   <tr className="text-left text-slate-600 text-[13px] border-b border-line">
-                  {['Fasilitas', 'Kategori', 'Jumlah', 'Kode Aset / QR', 'Kondisi', 'Terakhir Dicek', 'Aksi']
+                    {['Fasilitas', 'Kategori', 'Jumlah', 'Kode Aset / QR', 'Kondisi', 'Terakhir Dicek', 'Aksi']
                       .filter((h) => h !== 'Aksi' || bisa('kelolaData'))
                       .map((h) => (
                       <th key={h} className="px-4 py-3 font-bold">
@@ -191,7 +203,7 @@ export default function DataFasilitas() {
                         <StatusBadge status={f.kondisi} />
                       </td>
                       <td className="px-4 py-3 text-muted">{f.terakhirDicek}</td>
-                                           {bisa('kelolaData') && (
+                      {bisa('kelolaData') && (
                         <td className="px-4 py-2">
                           <div className="flex gap-1.5">
                             <button type="button" aria-label={`Ubah ${f.nama}`} className="size-9 grid place-items-center rounded-lg border border-slate-200 hover:bg-slate-50">
@@ -200,7 +212,7 @@ export default function DataFasilitas() {
                             <button
                               type="button"
                               aria-label={`Hapus ${f.nama}`}
-                              onClick={() => hapusFasilitas(f.id)}
+                              onClick={() => hapus(f)}
                               className="size-9 grid place-items-center rounded-lg border border-red-200 text-red-700 hover:bg-red-50"
                             >
                               <Trash2 size={15} />
@@ -234,7 +246,7 @@ export default function DataFasilitas() {
               <button type="button" onClick={() => setFormTerbuka(false)} className={tombolKedua}>
                 Batal
               </button>
-              <button type="button" onClick={simpan} className={tombolUtama}>
+              <button type="button" onClick={simpan} disabled={menyimpan} className={`${tombolUtama} disabled:opacity-60`}>
                 Simpan Fasilitas
               </button>
             </>

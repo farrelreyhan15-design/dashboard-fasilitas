@@ -6,20 +6,26 @@ import {
   AirVent, Projector, Monitor, Lightbulb, Armchair, Table2, Presentation, PlugZap, DoorOpen, Package,
 } from 'lucide-react'
 import Header from '../components/Header.jsx'
+import InfoMuat from '../components/InfoMuat.jsx'
 import StatusBadge from '../components/StatusBadge.jsx'
 import Modal, { gayaInput, gayaLabel, tombolUtama, tombolKedua } from '../components/Modal.jsx'
 import { useData } from '../context/DataContext.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
-import { FASILITAS_STANDAR, JENIS_RUANG, riwayatAwal } from '../data/dataAwal.js'
+import {
+  FASILITAS_STANDAR, JENIS_RUANG, SATUAN_KAPASITAS, DAFTAR_KAMPUS, gedungDiKampus, buatId, buatNama,
+  teksKapasitas, teksLokasi,
+} from '../data/konstanta.js'
 
 const PER_HALAMAN = 10
 
 const FORM_KOSONG = {
-  kode: '',
-  nama: '',
-  lantai: '1',
+  kampus: 'Kampus A',
+  gedung: '',
+  ruangan: '',
+  lantai: '',
   jenis: 'Ruang Kuliah',
   kapasitas: '',
+  satuanKapasitas: 'Kursi',
   luas: '',
   penanggungJawab: '',
   deskripsi: '',
@@ -58,7 +64,8 @@ export default function DataRuangan() {
   const { bisa } = useAuth()
   const [params] = useSearchParams()
   const [cari, setCari] = useState(params.get('cari') ?? '')
-  const [filterLantai, setFilterLantai] = useState('Semua')
+  const [filterKampus, setFilterKampus] = useState('Semua')
+  const [filterGedung, setFilterGedung] = useState('Semua')
   const [halaman, setHalaman] = useState(1)
   const [dipilihId, setDipilihId] = useState(null)
   const [tab, setTab] = useState('detail')
@@ -66,6 +73,7 @@ export default function DataRuangan() {
   const [form, setForm] = useState(FORM_KOSONG)
   const [error, setError] = useState('')
   const [pesan, setPesan] = useState('')
+  const [menyimpan, setMenyimpan] = useState(false)
   const panelDetail = useRef(null)
 
   const ubah = (kolom) => (e) => setForm({ ...form, [kolom]: e.target.value })
@@ -73,8 +81,9 @@ export default function DataRuangan() {
   // ===== Daftar ruangan (pencarian, filter, halaman) =====
   const ruangTampil = ruang.filter(
     (r) =>
-      (filterLantai === 'Semua' || `Lantai ${r.lantai}` === filterLantai) &&
-      (r.nama + r.kode).toLowerCase().includes(cari.toLowerCase()),
+      (filterKampus === 'Semua' || r.kampus === filterKampus) &&
+      (filterGedung === 'Semua' || r.gedung === filterGedung) &&
+      r.nama.toLowerCase().includes(cari.toLowerCase()),
   )
   const jumlahHalaman = Math.max(1, Math.ceil(ruangTampil.length / PER_HALAMAN))
   const halamanAman = Math.min(halaman, jumlahHalaman)
@@ -85,7 +94,8 @@ export default function DataRuangan() {
   const ruangDipilih = ruangTampil.find((r) => r.id === dipilihId) ?? ruangTampil[0] ?? null
   const fasilitasRuang = ruangDipilih ? fasilitas.filter((f) => f.ruangId === ruangDipilih.id) : []
   const fasilitasBaik = fasilitasRuang.filter((f) => f.kondisi === 'baik').length
-  const riwayatRuang = ruangDipilih ? riwayatAwal.filter((r) => r.ruangId === ruangDipilih.id) : []
+  // Riwayat pemeliharaan belum tersimpan di database (dibuat bersama menu Pemeliharaan)
+  const riwayatRuang = []
 
   // Ringkasan di bagian atas
   const total = ruang.length
@@ -113,11 +123,13 @@ export default function DataRuangan() {
   function bukaUbah() {
     setForm({
       ...FORM_KOSONG,
-      kode: ruangDipilih.kode,
-      nama: ruangDipilih.nama,
-      lantai: String(ruangDipilih.lantai),
+      kampus: ruangDipilih.kampus,
+      gedung: ruangDipilih.gedung,
+      ruangan: ruangDipilih.ruangan,
+      lantai: ruangDipilih.lantai ? String(ruangDipilih.lantai) : '',
       jenis: ruangDipilih.jenis,
       kapasitas: ruangDipilih.kapasitas ?? '',
+      satuanKapasitas: ruangDipilih.satuanKapasitas ?? 'Kursi',
       luas: ruangDipilih.luas ?? '',
       penanggungJawab: ruangDipilih.penanggungJawab ?? '',
       deskripsi: ruangDipilih.deskripsi ?? '',
@@ -134,31 +146,46 @@ export default function DataRuangan() {
     })
   }
 
-  function simpan() {
-    const kode = form.kode.trim()
-    if (!kode || !form.nama.trim()) return setError('Kode dan nama ruangan wajib diisi.')
+  async function simpan() {
+    if (!form.gedung.trim() || !form.ruangan.trim()) return setError('Gedung dan ruangan wajib diisi.')
 
     const data = {
-      nama: form.nama.trim(),
-      lantai: Number(form.lantai),
+      nama: buatNama(form.gedung, form.ruangan),
+      kampus: form.kampus,
+      gedung: form.gedung.trim(),
+      ruangan: form.ruangan.trim(),
+      lantai: Number(form.lantai) || null,
       jenis: form.jenis,
       kapasitas: Number(form.kapasitas) || null,
+      satuanKapasitas: Number(form.kapasitas) ? form.satuanKapasitas : null,
       luas: Number(form.luas) || null,
       penanggungJawab: form.penanggungJawab.trim(),
       deskripsi: form.deskripsi.trim(),
     }
 
+    const sudahAda = ruang.find((r) => buatId(r.nama) === buatId(data.nama))
+    if (sudahAda && (mode === 'tambah' || sudahAda.id !== ruangDipilih.id)) {
+      return setError(`Ruangan ${data.nama} sudah terdaftar.`)
+    }
+
+    setError('')
+    setMenyimpan(true)
     if (mode === 'ubah') {
-      ubahRuang(ruangDipilih.id, data)
+      const hasil = await ubahRuang(ruangDipilih.id, data)
+      setMenyimpan(false)
+      if (hasil.error) return setError(hasil.error)
       setPesan(`Data ${data.nama} berhasil diperbarui.`)
     } else {
-      if (ruang.some((r) => r.kode === kode)) return setError(`Kode ${kode} sudah dipakai ruangan lain.`)
       const daftar = FASILITAS_STANDAR.filter(([nama]) => form.fasilitasDipilih.includes(nama)).map(
         ([nama, kategori, jumlah, satuan, singkat]) => ({ nama, kategori, jumlah, satuan, singkat }),
       )
-      tambahRuang({ kode, ...data }, daftar)
-      setDipilihId(kode)
+      const hasil = await tambahRuang(data, daftar)
+      setMenyimpan(false)
+      if (hasil.error) return setError(hasil.error)
+      setDipilihId(hasil.id)
       setCari('')
+      setFilterKampus('Semua')
+      setFilterGedung('Semua')
       setPesan(`${data.nama} berhasil ditambahkan dengan ${daftar.length} fasilitas.`)
     }
     setMode(null)
@@ -167,6 +194,7 @@ export default function DataRuangan() {
   return (
     <>
       <Header judul="Data Ruangan" subjudul="Manajemen data ruangan dan fasilitas di setiap ruangan" />
+      <InfoMuat />
 
       {pesan && (
         <div role="status" className="flex items-center gap-3 p-3.5 rounded-xl bg-ok-soft border border-green-200 text-ok-ink">
@@ -223,18 +251,33 @@ export default function DataRuangan() {
               />
             </label>
             <select
-              aria-label="Filter lantai"
-              value={filterLantai}
+              aria-label="Filter kampus"
+              value={filterKampus}
               onChange={(e) => {
-                setFilterLantai(e.target.value)
+                setFilterKampus(e.target.value)
+                setFilterGedung('Semua')
                 setHalaman(1)
               }}
               className={`${gayaInput} sm:w-40`}
             >
-              <option>Semua</option>
-              <option>Lantai 1</option>
-              <option>Lantai 2</option>
-              <option>Lantai 3</option>
+              <option value="Semua">Semua kampus</option>
+              {DAFTAR_KAMPUS.map((k) => (
+                <option key={k}>{k}</option>
+              ))}
+            </select>
+            <select
+              aria-label="Filter gedung"
+              value={filterGedung}
+              onChange={(e) => {
+                setFilterGedung(e.target.value)
+                setHalaman(1)
+              }}
+              className={`${gayaInput} sm:w-40`}
+            >
+              <option value="Semua">Semua gedung</option>
+              {gedungDiKampus(ruang, filterKampus).map((g) => (
+                <option key={g}>{g}</option>
+              ))}
             </select>
           </div>
 
@@ -261,7 +304,10 @@ export default function DataRuangan() {
                     >
                       <td className="px-3 py-3 text-muted">{awal + i + 1}</td>
                       <td className="px-3 py-3 font-bold">{r.nama}</td>
-                      <td className="px-3 py-3 whitespace-nowrap">Lantai {r.lantai}</td>
+                      <td className="px-3 py-3 whitespace-nowrap">
+                        <span className="block">{r.lantai ? `${r.gedung} · Lt. ${r.lantai}` : r.gedung}</span>
+                        <span className="block text-xs text-muted">{r.kampus}</span>
+                      </td>
                       <td className="px-3 py-3 text-center">{r.jumlahFasilitas}</td>
                       <td className="px-3 py-3">
                         <StatusBadge status={r.status} />
@@ -354,7 +400,7 @@ export default function DataRuangan() {
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="text-2xl font-extrabold">{ruangDipilih.nama}</h2>
                       <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-slate-100 text-slate-700">
-                        Lantai {ruangDipilih.lantai}
+                        {teksLokasi(ruangDipilih)}
                       </span>
                       <StatusBadge status={ruangDipilih.status} />
                     </div>
@@ -399,10 +445,10 @@ export default function DataRuangan() {
                       <h3 className="font-bold mb-3">Informasi Ruangan</h3>
                       <dl className="flex flex-col gap-2.5 text-sm">
                         {[
-                          [Hash, 'Kode Ruangan', `GD04-${ruangDipilih.kode}`],
-                          [MapPin, 'Lokasi', `Gedung 4 · Lantai ${ruangDipilih.lantai}`],
+                          [Hash, 'Jenis', ruangDipilih.jenis],
+                          [MapPin, 'Lokasi', teksLokasi(ruangDipilih)],
                           [Ruler, 'Luas', ruangDipilih.luas ? `${ruangDipilih.luas} m²` : '-'],
-                          [Users, 'Kapasitas', ruangDipilih.kapasitas ? `${ruangDipilih.kapasitas} orang` : '-'],
+                          [Users, 'Kapasitas', teksKapasitas(ruangDipilih)],
                           [UserRound, 'Penanggung Jawab', ruangDipilih.penanggungJawab || '-'],
                           [Clock, 'Inspeksi Terakhir', ruangDipilih.inspeksiTerakhir ?? 'Belum ada'],
                         ].map(([Ikon, label, nilai]) => (
@@ -522,14 +568,14 @@ export default function DataRuangan() {
       {mode && (
         <Modal
           judul={mode === 'ubah' ? 'Ubah Data Ruangan' : 'Tambah Ruangan'}
-          keterangan={mode === 'ubah' ? `Kode ruangan GD04-${form.kode} tidak dapat diubah.` : 'Ruangan baru langsung muncul di dashboard dengan status "Belum Diinspeksi".'}
+          keterangan={mode === 'ubah' ? 'Perubahan langsung tampil di dashboard.' : 'Ruangan baru langsung muncul di dashboard dengan status "Belum Diinspeksi".'}
           tutup={() => setMode(null)}
           footer={
             <>
               <button type="button" onClick={() => setMode(null)} className={tombolKedua}>
                 Batal
               </button>
-              <button type="button" onClick={simpan} className={tombolUtama}>
+              <button type="button" onClick={simpan} disabled={menyimpan} className={`${tombolUtama} disabled:opacity-60`}>
                 Simpan
               </button>
             </>
@@ -537,19 +583,41 @@ export default function DataRuangan() {
         >
           <div className="grid gap-4 sm:grid-cols-2">
             <label className={gayaLabel}>
-              Kode ruangan *
-              <input className={gayaInput} value={form.kode} onChange={ubah('kode')} disabled={mode === 'ubah'} placeholder="Contoh: 4.307" />
+              Kampus *
+              <select className={gayaInput} value={form.kampus} onChange={ubah('kampus')}>
+                {DAFTAR_KAMPUS.map((k) => (
+                  <option key={k}>{k}</option>
+                ))}
+              </select>
             </label>
             <label className={gayaLabel}>
-              Nama ruangan *
-              <input className={gayaInput} value={form.nama} onChange={ubah('nama')} placeholder="Contoh: R. 4.307" />
+              Gedung *
+              <input className={gayaInput} list="daftar-gedung" value={form.gedung} onChange={ubah('gedung')} placeholder="Contoh: G4 atau CM" />
+              <datalist id="daftar-gedung">
+                {gedungDiKampus(ruang, form.kampus).map((g) => (
+                  <option key={g} value={g} />
+                ))}
+              </datalist>
             </label>
+            <label className={gayaLabel}>
+              Ruangan *
+              <input className={gayaInput} value={form.ruangan} onChange={ubah('ruangan')} placeholder="Contoh: R5, 101, Lab Virtual" />
+            </label>
+            <div className="flex flex-col gap-1.5 text-[13px]">
+              <span className="font-semibold">Nama yang akan tampil</span>
+              <span className="min-h-11 px-3 rounded-xl bg-slate-50 border border-line flex items-center text-sm font-bold">
+                {form.gedung.trim() && form.ruangan.trim() ? buatNama(form.gedung, form.ruangan) : '-'}
+              </span>
+            </div>
             <label className={gayaLabel}>
               Lantai
               <select className={gayaInput} value={form.lantai} onChange={ubah('lantai')}>
-                <option value="1">Lantai 1</option>
-                <option value="2">Lantai 2</option>
-                <option value="3">Lantai 3</option>
+                <option value="">Tidak ada / belum diketahui</option>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <option key={n} value={n}>
+                    Lantai {n}
+                  </option>
+                ))}
               </select>
             </label>
             <label className={gayaLabel}>
@@ -560,10 +628,20 @@ export default function DataRuangan() {
                 ))}
               </select>
             </label>
-            <label className={gayaLabel}>
-              Kapasitas (orang)
-              <input type="number" min="1" className={gayaInput} value={form.kapasitas} onChange={ubah('kapasitas')} placeholder="40" />
-            </label>
+            <div className="grid grid-cols-2 gap-2.5">
+              <label className={gayaLabel}>
+                Kapasitas
+                <input type="number" min="1" className={gayaInput} value={form.kapasitas} onChange={ubah('kapasitas')} placeholder="Contoh: 40" />
+              </label>
+              <label className={gayaLabel}>
+                Satuan
+                <select className={gayaInput} value={form.satuanKapasitas} onChange={ubah('satuanKapasitas')}>
+                  {SATUAN_KAPASITAS.map((sat) => (
+                    <option key={sat}>{sat}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <label className={gayaLabel}>
               Luas (m²)
               <input type="number" min="1" className={gayaInput} value={form.luas} onChange={ubah('luas')} placeholder="72" />
