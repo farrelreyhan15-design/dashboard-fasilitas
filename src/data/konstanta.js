@@ -4,11 +4,19 @@
   Data ruangan dan fasilitasnya sendiri sekarang disimpan di database Supabase.
 */
 
+// Label status FASILITAS: Baik / Bermasalah / Rusak
+// (kode 'perawatan' di database tetap dipakai, hanya tulisannya yang berubah)
 export const STATUS = {
   baik: { label: 'Baik', bg: 'bg-ok-soft', text: 'text-ok-ink', dot: 'bg-ok' },
-  perawatan: { label: 'Perlu Perawatan', bg: 'bg-warn-soft', text: 'text-warn-ink', dot: 'bg-warn' },
+  perawatan: { label: 'Bermasalah', bg: 'bg-warn-soft', text: 'text-warn-ink', dot: 'bg-warn' },
   rusak: { label: 'Rusak', bg: 'bg-bad-soft', text: 'text-bad-ink', dot: 'bg-bad' },
   belum: { label: 'Belum Diinspeksi', bg: 'bg-slate-100', text: 'text-slate-600', dot: 'bg-slate-400' },
+}
+
+// Label status RUANGAN: Baik / Bermasalah / Tidak Dapat Digunakan / Belum Diinspeksi
+export const LABEL_RUANG = {
+  perawatan: 'Bermasalah',
+  rusak: 'Tidak Dapat Digunakan',
 }
 
 export const KATEGORI = ['Elektronik', 'Furnitur', 'Kelistrikan', 'Bangunan', 'Kebersihan', 'Kendaraan', 'Lainnya']

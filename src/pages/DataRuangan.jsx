@@ -103,8 +103,8 @@ export default function DataRuangan() {
   const kartu = [
     { label: 'Total Ruangan', nilai: total, satuan: 'ruangan', ikon: LayoutList, warna: 'bg-primary-soft text-primary' },
     { label: 'Kondisi Baik', nilai: jumlah('baik'), satuan: `ruangan (${persen(jumlah('baik'), total)})`, ikon: CheckCircle2, warna: 'bg-ok-soft text-ok' },
-    { label: 'Perlu Perawatan', nilai: jumlah('perawatan'), satuan: `ruangan (${persen(jumlah('perawatan'), total)})`, ikon: AlertTriangle, warna: 'bg-warn-soft text-amber-700' },
-    { label: 'Rusak', nilai: jumlah('rusak'), satuan: `ruangan (${persen(jumlah('rusak'), total)})`, ikon: XCircle, warna: 'bg-bad-soft text-bad' },
+    { label: 'Bermasalah', nilai: jumlah('perawatan'), satuan: `ruangan (${persen(jumlah('perawatan'), total)})`, ikon: AlertTriangle, warna: 'bg-warn-soft text-amber-700' },
+    { label: 'Tidak Dapat Digunakan', nilai: jumlah('rusak'), satuan: `ruangan (${persen(jumlah('rusak'), total)})`, ikon: XCircle, warna: 'bg-bad-soft text-bad' },
   ]
 
   function pilihRuang(id) {
@@ -310,7 +310,7 @@ export default function DataRuangan() {
                       </td>
                       <td className="px-3 py-3 text-center">{r.jumlahFasilitas}</td>
                       <td className="px-3 py-3">
-                        <StatusBadge status={r.status} />
+                        <StatusBadge status={r.status} ruang />
                       </td>
                       <td className="px-2 py-2">
                         <button
@@ -402,7 +402,7 @@ export default function DataRuangan() {
                       <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-slate-100 text-slate-700">
                         {teksLokasi(ruangDipilih)}
                       </span>
-                      <StatusBadge status={ruangDipilih.status} />
+                      <StatusBadge status={ruangDipilih.status} ruang />
                     </div>
                     <p className="text-sm text-muted mt-0.5">{ruangDipilih.deskripsi || ruangDipilih.jenis}</p>
                   </div>
@@ -542,7 +542,7 @@ export default function DataRuangan() {
                           {r.tanggal} · {r.oleh}
                         </p>
                       </div>
-                      <StatusBadge status={r.status} />
+                      <StatusBadge status={r.status} ruang />
                     </div>
                   ))}
                   {riwayatRuang.length === 0 && (

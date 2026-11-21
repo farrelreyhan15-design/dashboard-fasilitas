@@ -33,15 +33,15 @@ export default function Dashboard() {
   const kartu = [
     { label: 'Total Ruangan', nilai: total, satuan: 'ruang', ikon: LayoutList, warna: 'bg-primary-soft text-primary' },
     { label: 'Kondisi Baik', nilai: nBaik, satuan: `ruang (${persen(nBaik, total)})`, ikon: CheckCircle2, warna: 'bg-ok-soft text-ok' },
-    { label: 'Perlu Perawatan', nilai: nRawat, satuan: `ruang (${persen(nRawat, total)})`, ikon: AlertTriangle, warna: 'bg-warn-soft text-amber-700' },
-    { label: 'Rusak', nilai: nRusak, satuan: `ruang (${persen(nRusak, total)})`, ikon: XCircle, warna: 'bg-bad-soft text-bad' },
+    { label: 'Bermasalah', nilai: nRawat, satuan: `ruang (${persen(nRawat, total)})`, ikon: AlertTriangle, warna: 'bg-warn-soft text-amber-700' },
+    { label: 'Tidak Dapat Digunakan', nilai: nRusak, satuan: `ruang (${persen(nRusak, total)})`, ikon: XCircle, warna: 'bg-bad-soft text-bad' },
     { label: 'Total Fasilitas', nilai: fasilitas.length, satuan: 'item', ikon: Briefcase, warna: 'bg-slate-100 text-slate-600' },
   ]
 
   const dataGrafik = [
     { nama: 'Baik', nilai: nBaik, warna: '#16a34a' },
-    { nama: 'Perlu Perawatan', nilai: nRawat, warna: '#f59e0b' },
-    { nama: 'Rusak', nilai: nRusak, warna: '#dc2626' },
+    { nama: 'Bermasalah', nilai: nRawat, warna: '#f59e0b' },
+    { nama: 'Tidak Dapat Digunakan', nilai: nRusak, warna: '#dc2626' },
     { nama: 'Belum Diinspeksi', nilai: nBelum, warna: '#94a3b8' },
   ].filter((d) => d.nilai > 0)
 
@@ -144,7 +144,7 @@ export default function Dashboard() {
                       {teksLokasi(r)} · {r.jenis}
                     </p>
                   </div>
-                  <StatusBadge status={r.status} />
+                  <StatusBadge status={r.status} ruang />
                 </div>
                 <div className="flex flex-wrap gap-1.5 text-xs">
                   <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">{r.jumlahFasilitas} fasilitas</span>
@@ -204,7 +204,7 @@ export default function Dashboard() {
               <div key={f.id} className={`flex gap-3 items-start p-3 rounded-xl ${f.kondisi === 'rusak' ? 'bg-red-50' : 'bg-amber-50'}`}>
                 <div className="flex-1">
                   <p className="text-sm font-bold">
-                    R. {f.ruangId} · {f.nama}
+                    {ruang.find((r) => r.id === f.ruangId)?.nama} · {f.nama}
                   </p>
                   <p className="text-xs text-muted">{f.jumlah} {f.satuan} · dicek {f.terakhirDicek}</p>
                 </div>

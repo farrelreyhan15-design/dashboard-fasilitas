@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   Search, Filter, ChevronRight, ChevronLeft, CheckCircle2, AlertTriangle, XCircle, RefreshCw, CalendarClock, Clock,
-  CalendarDays, Save, Check, CheckCheck, X, ImagePlus, DoorOpen, BarChart3, Camera, ClipboardList,
+  CalendarDays, Save, Check, CheckCheck, RotateCcw, X, ImagePlus, DoorOpen, BarChart3, Camera, ClipboardList,
   AirVent, Projector, Monitor, Lightbulb, Armchair, Table2, Presentation, PlugZap, Package,
 } from 'lucide-react'
 import Header from '../components/Header.jsx'
@@ -27,7 +27,7 @@ const STATUS_INSPEKSI = {
 // ===== Pilihan kondisi fasilitas =====
 const KONDISI = {
   baik: { label: 'Baik', gaya: 'bg-ok-soft text-ok-ink border-green-200' },
-  perawatan: { label: 'Perawatan', gaya: 'bg-warn-soft text-warn-ink border-amber-200' },
+  perawatan: { label: 'Bermasalah', gaya: 'bg-warn-soft text-warn-ink border-amber-200' },
   rusak: { label: 'Rusak', gaya: 'bg-bad-soft text-bad-ink border-red-200' },
 }
 
@@ -391,7 +391,20 @@ function FormInspeksi({ ruangAktif, milikRuang, draftBerubah, selesai }) {
   const [menyimpan, setMenyimpan] = useState(false)
   const inputFoto = useRef(null)
 
-  const nilai = (f) => isian[f.id] ?? { kondisi: '', jumlah: '', catatan: '' }
+  // Isian awal = kondisi terakhir fasilitas. Kalau tidak ada perubahan, cukup biarkan.
+  const kondisiTerakhir = (f) => ({
+    kondisi: f.kondisi,
+    jumlah: f.kondisi === 'baik' ? '' : String(f.jumlahRusak || f.jumlah),
+    catatan: f.catatan,
+  })
+  const nilai = (f) => isian[f.id] ?? kondisiTerakhir(f)
+
+  // Apakah isian berbeda dari kondisi terakhir?
+  function berubah(f) {
+    const n = nilai(f)
+    const awal = kondisiTerakhir(f)
+    return n.kondisi !== awal.kondisi || (n.kondisi !== 'baik' && n.jumlah !== awal.jumlah)
+  }
 
   function ubah(f, data) {
     setIsian({ ...isian, [f.id]: { ...nilai(f), ...data } })
@@ -399,7 +412,12 @@ function FormInspeksi({ ruangAktif, milikRuang, draftBerubah, selesai }) {
   }
 
   function ubahKondisi(f, kondisi) {
-    if (kondisi === 'baik' || kondisi === '') return ubah(f, { kondisi, jumlah: '' })
+    if (kondisi === 'baik') {
+      // Catatan kerusakan lama tidak relevan lagi kalau fasilitas sudah baik
+      const catatan = nilai(f).catatan === f.catatan ? '' : nilai(f).catatan
+      return ubah(f, { kondisi, jumlah: '', catatan })
+    }
+    if (kondisi === f.kondisi) return ubah(f, kondisiTerakhir(f))
     // Fasilitas yang hanya 1 unit langsung terisi 1
     ubah(f, { kondisi, jumlah: nilai(f).jumlah || (f.jumlah === 1 ? '1' : '') })
   }
@@ -412,12 +430,20 @@ function FormInspeksi({ ruangAktif, milikRuang, draftBerubah, selesai }) {
   }
 
   function tandaiSemuaBaik() {
-    const semua = { ...isian }
+    const semua = {}
     milikRuang.forEach((f) => {
-      if (!nilai(f).kondisi) semua[f.id] = { kondisi: 'baik', jumlah: '', catatan: '' }
+      semua[f.id] = { kondisi: 'baik', jumlah: '', catatan: '' }
     })
     setIsian(semua)
   }
+
+  // Kembalikan semua isian ke kondisi terakhir
+  function kembalikanSemua() {
+    setIsian({})
+    setError('')
+  }
+
+  const jumlahBerubah = milikRuang.filter(berubah).length
 
   // Progres: fasilitas yang kondisinya sudah dipilih
   const sudahDiperiksa = milikRuang.filter((f) => nilai(f).kondisi).length
@@ -428,7 +454,7 @@ function FormInspeksi({ ruangAktif, milikRuang, draftBerubah, selesai }) {
   const bermasalah = milikRuang.filter((f) => nilai(f).kondisi && nilai(f).kondisi !== 'baik')
   const teksUnit = (f) => {
     const n = nilai(f)
-    const keterangan = n.kondisi === 'rusak' ? 'rusak' : 'perlu perawatan'
+    const keterangan = n.kondisi === 'rusak' ? 'rusak' : 'bermasalah'
     return `${f.nama} (${n.jumlah || '?'} dari ${f.jumlah} unit ${keterangan})`
   }
   const rusakTotal = bermasalah.filter((f) => nilai(f).kondisi === 'rusak' && Number(nilai(f).jumlah) === f.jumlah)
@@ -542,6 +568,13 @@ function FormInspeksi({ ruangAktif, milikRuang, draftBerubah, selesai }) {
           <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden">
             <div className="h-full rounded-full bg-ok transition-all" style={{ width: `${total ? (sudahDiperiksa / total) * 100 : 0}%` }} />
           </div>
+          <p className="text-xs text-muted mt-1.5">
+            {jumlahBerubah ? (
+              <b className="text-warn-ink">{jumlahBerubah} fasilitas berubah kondisi</b>
+            ) : (
+              'Belum ada perubahan kondisi'
+            )}
+          </p>
         </div>
       </div>
 
@@ -564,10 +597,20 @@ function FormInspeksi({ ruangAktif, milikRuang, draftBerubah, selesai }) {
           <div className="flex flex-col gap-2.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-base font-extrabold">Daftar Fasilitas &amp; Kondisi</h3>
-              <button type="button" onClick={tandaiSemuaBaik} className={`${tombolKedua} min-h-10 px-3.5`}>
-                <CheckCheck size={17} /> Tandai sisanya baik
-              </button>
+              <div className="flex flex-wrap gap-2">
+                {jumlahBerubah > 0 && (
+                  <button type="button" onClick={kembalikanSemua} className={`${tombolKedua} min-h-10 px-3.5`}>
+                    <RotateCcw size={16} /> Kembalikan
+                  </button>
+                )}
+                <button type="button" onClick={tandaiSemuaBaik} className={`${tombolKedua} min-h-10 px-3.5`}>
+                  <CheckCheck size={17} /> Tandai semua baik
+                </button>
+              </div>
             </div>
+            <p className="text-[13px] text-muted -mt-1">
+              Kondisi terisi otomatis dari inspeksi terakhir. Kalau tidak ada perubahan, biarkan saja. Ubah hanya fasilitas yang kondisinya berubah.
+            </p>
 
             <div className="border border-line rounded-xl overflow-hidden">
               <div className="hidden md:grid grid-cols-[minmax(0,1.3fr)_64px_140px_84px_minmax(0,1.6fr)] gap-3 px-3.5 py-2.5 bg-slate-50 text-[13px] font-bold text-slate-600">
@@ -582,21 +625,28 @@ function FormInspeksi({ ruangAktif, milikRuang, draftBerubah, selesai }) {
                   const n = nilai(f)
                   const Ikon = ikonFasilitas(f.nama)
                   const butuhJumlah = n.kondisi === 'perawatan' || n.kondisi === 'rusak'
+                  const adaPerubahan = berubah(f)
                   return (
                     <li
                       key={f.id}
-                      className="grid grid-cols-[1fr_6rem] gap-2 md:grid-cols-[minmax(0,1.3fr)_64px_140px_84px_minmax(0,1.6fr)] md:gap-3 items-center px-3.5 py-3 border-t border-line first:border-t-0 md:first:border-t"
+                      className={`grid grid-cols-[1fr_6rem] gap-2 md:grid-cols-[minmax(0,1.3fr)_64px_140px_84px_minmax(0,1.6fr)] md:gap-3 items-center px-3.5 py-3 border-t border-line first:border-t-0 md:first:border-t
+                        ${adaPerubahan ? 'bg-amber-50/70' : ''}`}
                     >
                       {/* Fasilitas */}
                       <div className="col-span-2 md:col-span-1 flex items-center gap-2.5 min-w-0">
                         <Ikon size={20} className="text-slate-600 shrink-0" />
                         <div className="min-w-0">
-                          <p className="font-semibold leading-snug">{f.nama}</p>
+                          <p className="font-semibold leading-snug">
+                            {f.nama}
+                            {adaPerubahan && (
+                              <span className="ml-1.5 align-middle text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-warn-soft text-warn-ink">Berubah</span>
+                            )}
+                          </p>
                           <p className="text-xs text-muted">
                             <span className="md:hidden">
                               {f.jumlah} {f.satuan} ·{' '}
                             </span>
-                            Sebelumnya: {KONDISI[f.kondisi]?.label ?? '-'}
+                            Terakhir: {KONDISI[f.kondisi]?.label ?? '-'}
                             {f.jumlahRusak > 0 && ` (${f.jumlahRusak} unit)`}
                           </p>
                         </div>
@@ -617,7 +667,7 @@ function FormInspeksi({ ruangAktif, milikRuang, draftBerubah, selesai }) {
                         >
                           <option value="">Pilih…</option>
                           <option value="baik">Baik</option>
-                          <option value="perawatan">Perawatan</option>
+                          <option value="perawatan">Bermasalah</option>
                           <option value="rusak">Rusak</option>
                         </select>
                       </label>
@@ -795,7 +845,7 @@ function PanelRiwayat({ ruangAktif }) {
                   <p className="text-xs text-muted">Oleh: {i.pemeriksa}</p>
                   {masalah.map((d) => (
                     <p key={d.nama} className="text-xs text-slate-600">
-                      {d.nama} {d.kondisi === 'rusak' ? 'rusak' : 'perlu perawatan'} ({d.jumlah} unit){d.catatan && `: ${d.catatan}`}
+                      {d.nama} {d.kondisi === 'rusak' ? 'rusak' : 'bermasalah'} ({d.jumlah} unit){d.catatan && `: ${d.catatan}`}
                     </p>
                   ))}
                   {i.catatan && <p className="text-xs text-slate-600">Catatan: {i.catatan}</p>}
