@@ -4,12 +4,13 @@
   Data ruangan dan fasilitasnya sendiri sekarang disimpan di database Supabase.
 */
 
-// Label status FASILITAS: Baik / Bermasalah / Rusak
+// Label status FASILITAS: Baik / Bermasalah / Rusak / Maintenance (Maintenance hanya dipasang Sarpras)
 // (kode 'perawatan' di database tetap dipakai, hanya tulisannya yang berubah)
 export const STATUS = {
   baik: { label: 'Baik', bg: 'bg-ok-soft', text: 'text-ok-ink', dot: 'bg-ok' },
   perawatan: { label: 'Bermasalah', bg: 'bg-warn-soft', text: 'text-warn-ink', dot: 'bg-warn' },
   rusak: { label: 'Rusak', bg: 'bg-bad-soft', text: 'text-bad-ink', dot: 'bg-bad' },
+  maintenance: { label: 'Maintenance', bg: 'bg-sky-50', text: 'text-sky-700', dot: 'bg-sky-500' }, // khusus Sarpras
   belum: { label: 'Belum Diinspeksi', bg: 'bg-slate-100', text: 'text-slate-600', dot: 'bg-slate-400' },
 }
 

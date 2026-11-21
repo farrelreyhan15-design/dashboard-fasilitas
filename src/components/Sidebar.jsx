@@ -73,7 +73,7 @@ export default function Sidebar({ terbuka, tutup }) {
 
         <div className="mt-auto p-3.5 rounded-xl bg-navy-soft">
           <p className="text-xs text-slate-300">Lokasi dipantau</p>
-          <p className="text-sm font-semibold">Gedung 4 · UISI</p>
+          <p className="text-sm font-semibold">Kampus · UISI</p>
         </div>
       </nav>
     </>

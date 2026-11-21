@@ -1,10 +1,10 @@
-import { CheckCircle2, AlertTriangle, XCircle, Clock } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, XCircle, Clock, Wrench } from 'lucide-react'
 import { STATUS, LABEL_RUANG } from '../data/konstanta.js'
 
-const IKON = { baik: CheckCircle2, perawatan: AlertTriangle, rusak: XCircle, belum: Clock }
+const IKON = { baik: CheckCircle2, perawatan: AlertTriangle, rusak: XCircle, maintenance: Wrench, belum: Clock }
 
 // Label status berwarna.
-//   Fasilitas: <StatusBadge status={f.kondisi} />       -> Baik / Bermasalah / Rusak
+//   Fasilitas: <StatusBadge status={f.kondisi} />       -> Baik / Bermasalah / Rusak / Maintenance
 //   Ruangan:   <StatusBadge status={r.status} ruang />  -> Baik / Bermasalah / Tidak Dapat Digunakan / Belum Diinspeksi
 export default function StatusBadge({ status, ruang = false }) {
   const s = STATUS[status] ?? STATUS.belum

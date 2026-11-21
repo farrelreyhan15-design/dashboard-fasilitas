@@ -26,6 +26,9 @@ export function hitungStatusRuang(daftarFasilitas) {
 
 const BUCKET_FOTO = 'dokumentasi-inspeksi'
 
+// Nama kondisi untuk catatan aktivitas
+const STATUS_TEKS = { baik: 'Baik', perawatan: 'Bermasalah', rusak: 'Rusak', maintenance: 'Maintenance' }
+
 // Memperkecil foto dari kamera HP (bisa 5-10 MB) menjadi maksimal 1280 px, format JPEG
 async function kecilkanFoto(file) {
   try {
@@ -98,9 +101,44 @@ function fasilitasDariDb(f) {
     satuan: f.satuan,
     kondisi: f.kondisi,
     catatan: f.catatan ?? '',
+    lacakPerUnit: f.lacak_per_unit ?? false,
     terakhirDicek: formatTanggal(f.diperbarui_pada),
   }
 }
+
+function unitDariDb(u) {
+  return {
+    id: String(u.id),
+    fasilitasId: String(u.fasilitas_id),
+    urutan: u.urutan,
+    kodeAset: u.kode_aset,
+    posisi: u.posisi ?? '',
+    merek: u.merek ?? '',
+    model: u.model ?? '',
+    spesifikasi: u.spesifikasi ?? '',
+    nomorSeri: u.nomor_seri ?? '',
+    tahunPengadaan: u.tahun_pengadaan ?? '',
+    kondisi: u.kondisi,
+    catatan: u.catatan ?? '',
+    terakhirDiubah: formatTanggal(u.diperbarui_pada),
+  }
+}
+
+// Isian form unit -> kolom database (yang kosong disimpan sebagai null)
+function unitKeDb(data) {
+  const kosongJadiNull = (teks) => (String(teks ?? '').trim() === '' ? null : String(teks).trim())
+  return {
+    posisi: kosongJadiNull(data.posisi),
+    merek: kosongJadiNull(data.merek),
+    model: kosongJadiNull(data.model),
+    spesifikasi: kosongJadiNull(data.spesifikasi),
+    nomor_seri: kosongJadiNull(data.nomorSeri),
+    tahun_pengadaan: data.tahunPengadaan ? Number(data.tahunPengadaan) : null,
+  }
+}
+
+// Kode unit: kode kelompok + nomor urut, contoh "G4-R1-AC" + 2 -> "G4-R1-AC-02"
+const kodeUnit = (kodeKelompok, urutan) => `${kodeKelompok}-${String(urutan).padStart(2, '0')}`
 
 function inspeksiDariDb(i) {
   return {
@@ -140,6 +178,7 @@ export function DataProvider({ children }) {
   const [fasilitas, setFasilitas] = useState([])
   const [aktivitas, setAktivitas] = useState([])
   const [inspeksi, setInspeksi] = useState([])
+  const [unit, setUnit] = useState([])
   const [memuat, setMemuat] = useState(true)
   const [galatMuat, setGalatMuat] = useState('')
 
@@ -150,20 +189,22 @@ export function DataProvider({ children }) {
     let masihTerpasang = true
 
     async function muat() {
-      const [hasilRuang, hasilFasilitas, hasilAktivitas, hasilInspeksi] = await Promise.all([
+      const [hasilRuang, hasilFasilitas, hasilAktivitas, hasilInspeksi, hasilUnit] = await Promise.all([
         supabase.from('ruangan').select('*').order('kampus').order('gedung').order('ruangan'),
         supabase.from('fasilitas').select('*').order('id'),
         supabase.from('aktivitas').select('*').order('waktu', { ascending: false }).limit(20),
         supabase.from('inspeksi').select('*').order('waktu', { ascending: false }).limit(1000),
+        supabase.from('unit_fasilitas').select('*').order('fasilitas_id').order('urutan'),
       ])
       if (!masihTerpasang) return
 
-      const galat = hasilRuang.error ?? hasilFasilitas.error ?? hasilAktivitas.error ?? hasilInspeksi.error
+      const galat = hasilRuang.error ?? hasilFasilitas.error ?? hasilAktivitas.error ?? hasilInspeksi.error ?? hasilUnit.error
       setGalatMuat(galat ? `Gagal memuat data: ${galat.message}` : '')
       setRuang((hasilRuang.data ?? []).map(ruangDariDb))
       setFasilitas((hasilFasilitas.data ?? []).map(fasilitasDariDb))
       setAktivitas((hasilAktivitas.data ?? []).map(aktivitasDariDb))
       setInspeksi((hasilInspeksi.data ?? []).map(inspeksiDariDb))
+      setUnit((hasilUnit.data ?? []).map(unitDariDb))
       setMemuat(false)
     }
 
@@ -260,15 +301,181 @@ export function DataProvider({ children }) {
         satuan: data.satuan,
         kondisi: data.kondisi,
         kode_aset: data.kodeAset,
+        lacak_per_unit: Boolean(data.lacakPerUnit),
       })
       .select()
       .single()
     if (error) return { error: pesanGalat(error) }
 
     setFasilitas((lama) => [...lama, fasilitasDariDb(baru)])
+
+    // Barang yang dilacak per unit: langsung buat unitnya, contoh AC 2 unit -> -01 dan -02
+    if (data.lacakPerUnit) {
+      const galatUnit = await buatUnitAwal(baru)
+      if (galatUnit) return { error: galatUnit }
+    }
+
     const namaRuang = ruang.find((r) => r.id === data.ruangId)?.nama ?? ''
     await catat(`Fasilitas ditambahkan: ${data.jumlah} ${data.satuan} ${data.nama} di ${namaRuang}`)
+    return { id: String(baru.id) }
+  }
+
+  // Membuat unit sebanyak "jumlah" untuk satu kelompok fasilitas (baris database)
+  async function buatUnitAwal(barisFasilitas) {
+    const daftar = Array.from({ length: barisFasilitas.jumlah }, (_, i) => ({
+      fasilitas_id: barisFasilitas.id,
+      urutan: i + 1,
+      kode_aset: kodeUnit(barisFasilitas.kode_aset, i + 1),
+      kondisi: barisFasilitas.kondisi,
+    }))
+    const { data, error } = await supabase.from('unit_fasilitas').insert(daftar).select()
+    if (error) return `Fasilitas tersimpan, tetapi unitnya gagal dibuat: ${pesanGalat(error)}`
+    setUnit((lama) => [...lama, ...data.map(unitDariDb)])
+    return null
+  }
+
+  // Mengubah nama / kategori / satuan (dan jumlah, kalau tidak dilacak per unit)
+  async function ubahFasilitas(id, data) {
+    const isian = { nama: data.nama, kategori: data.kategori, satuan: data.satuan }
+    if (data.jumlah) isian.jumlah = Number(data.jumlah)
+    const { data: hasil, error } = await supabase.from('fasilitas').update(isian).eq('id', Number(id)).select().single()
+    if (error) return { error: pesanGalat(error) }
+    setFasilitas((lama) => lama.map((f) => (f.id === id ? fasilitasDariDb(hasil) : f)))
+    await catat(`Data fasilitas diperbarui: ${hasil.nama} (${hasil.kode_aset})`)
     return {}
+  }
+
+  // Mengubah fasilitas kelompok menjadi dilacak per unit
+  async function aktifkanPerUnit(id) {
+    const f = fasilitas.find((x) => x.id === id)
+    const kodeKelompok = f.kodeAset.replace(/-\d+$/, '')
+    const { data: hasil, error } = await supabase
+      .from('fasilitas')
+      .update({ lacak_per_unit: true, kode_aset: kodeKelompok })
+      .eq('id', Number(id))
+      .select()
+      .single()
+    if (error) return { error: pesanGalat(error) }
+    setFasilitas((lama) => lama.map((x) => (x.id === id ? fasilitasDariDb(hasil) : x)))
+    const galatUnit = await buatUnitAwal({ ...hasil, kondisi: 'baik' })
+    if (galatUnit) return { error: galatUnit }
+    await catat(`${hasil.nama} (${hasil.kode_aset}) sekarang dicatat per unit`)
+    return {}
+  }
+
+  // ===== Unit fasilitas =====
+
+  // Jumlah di kelompok berubah otomatis (trigger database), jadi ambil ulang baris kelompoknya
+  async function segarkanFasilitas(id) {
+    const { data } = await supabase.from('fasilitas').select('*').eq('id', Number(id)).single()
+    if (data) setFasilitas((lama) => lama.map((f) => (f.id === id ? fasilitasDariDb(data) : f)))
+  }
+
+  async function ubahUnit(id, data) {
+    const { data: hasil, error } = await supabase.from('unit_fasilitas').update(unitKeDb(data)).eq('id', Number(id)).select().single()
+    if (error) return { error: pesanGalat(error) }
+    setUnit((lama) => lama.map((u) => (u.id === id ? unitDariDb(hasil) : u)))
+    return {}
+  }
+
+  async function tambahUnit(fasilitasId) {
+    const f = fasilitas.find((x) => x.id === fasilitasId)
+    const milik = unit.filter((u) => u.fasilitasId === fasilitasId)
+    const urutan = Math.max(0, ...milik.map((u) => u.urutan)) + 1
+    const { data: baru, error } = await supabase
+      .from('unit_fasilitas')
+      .insert({ fasilitas_id: Number(fasilitasId), urutan, kode_aset: kodeUnit(f.kodeAset, urutan) })
+      .select()
+      .single()
+    if (error) return { error: pesanGalat(error) }
+    setUnit((lama) => [...lama, unitDariDb(baru)])
+    await segarkanFasilitas(fasilitasId)
+    await catat(`Unit baru ditambahkan: ${baru.kode_aset}`)
+    return { id: String(baru.id) }
+  }
+
+  async function hapusUnit(id) {
+    const u = unit.find((x) => x.id === id)
+    const { error } = await supabase.from('unit_fasilitas').delete().eq('id', Number(id))
+    if (error) return { error: pesanGalat(error) }
+    setUnit((lama) => lama.filter((x) => x.id !== id))
+    await segarkanFasilitas(u.fasilitasId)
+    await catat(`Unit dihapus: ${u.kodeAset}`)
+    return {}
+  }
+
+  // ===== Perubahan kondisi oleh Sarpras (termasuk Maintenance) =====
+
+  // Untuk fasilitas yang dicatat per KELOMPOK (kursi, lampu, ...)
+  async function ubahKondisiFasilitas(id, kondisi, jumlah, catatan) {
+    const { error } = await supabase.rpc('ubah_kondisi_fasilitas', {
+      p_fasilitas_id: Number(id),
+      p_kondisi: kondisi,
+      p_jumlah: kondisi === 'baik' ? null : Number(jumlah),
+      p_catatan: catatan,
+    })
+    if (error) return { error: error.code === 'P0001' ? error.message : pesanGalat(error) }
+    await segarkanFasilitas(id)
+    const f = fasilitas.find((x) => x.id === id)
+    await catat(`Kondisi ${f?.nama} (${f?.kodeAset}) diubah menjadi ${STATUS_TEKS[kondisi]}`)
+    return {}
+  }
+
+  // Untuk satu UNIT (AC-01, AC-02, ...). Kondisi kelompoknya dihitung ulang oleh database.
+  async function ubahKondisiUnit(unitId, kondisi, catatan) {
+    const { error } = await supabase.rpc('ubah_kondisi_unit', { p_unit_id: Number(unitId), p_kondisi: kondisi, p_catatan: catatan })
+    if (error) return { error: error.code === 'P0001' ? error.message : pesanGalat(error) }
+    const { data } = await supabase.from('unit_fasilitas').select('*').eq('id', Number(unitId)).single()
+    if (data) {
+      setUnit((lama) => lama.map((u) => (u.id === unitId ? unitDariDb(data) : u)))
+      await segarkanFasilitas(String(data.fasilitas_id))
+      await catat(`Kondisi unit ${data.kode_aset} diubah menjadi ${STATUS_TEKS[kondisi]}`)
+    }
+    return {}
+  }
+
+  // Riwayat kondisi satu fasilitas: dari inspeksi + dari perubahan oleh Sarpras, urut terbaru
+  async function ambilRiwayatFasilitas(fasilitasId) {
+    const [hasilInspeksi, hasilSarpras] = await Promise.all([
+      supabase
+        .from('inspeksi_detail')
+        .select('id, kondisi_sebelum, kondisi, jumlah_rusak, catatan, inspeksi(waktu, nama_pemeriksa, peran, foto)')
+        .eq('fasilitas_id', Number(fasilitasId))
+        .order('id', { ascending: false })
+        .limit(50),
+      supabase.from('perubahan_kondisi').select('*').eq('fasilitas_id', Number(fasilitasId)).order('waktu', { ascending: false }).limit(50),
+    ])
+    const galat = hasilInspeksi.error ?? hasilSarpras.error
+    if (galat) return { error: galat.message, data: [] }
+
+    const dariInspeksi = hasilInspeksi.data.map((d) => ({
+      id: `i${d.id}`,
+      sumber: 'inspeksi',
+      sebelum: d.kondisi_sebelum,
+      kondisi: d.kondisi,
+      jumlah: d.jumlah_rusak,
+      catatan: d.catatan ?? '',
+      waktuAsli: d.inspeksi?.waktu,
+      oleh: d.inspeksi?.nama_pemeriksa ?? '-',
+      kodeUnit: '',
+      foto: (d.inspeksi?.foto ?? []).map((path) => supabase.storage.from(BUCKET_FOTO).getPublicUrl(path).data.publicUrl),
+    }))
+    const dariSarpras = hasilSarpras.data.map((d) => ({
+      id: `s${d.id}`,
+      sumber: 'sarpras',
+      sebelum: d.kondisi_sebelum,
+      kondisi: d.kondisi,
+      jumlah: d.jumlah,
+      catatan: d.catatan ?? '',
+      waktuAsli: d.waktu,
+      oleh: d.oleh,
+      kodeUnit: d.unit_id ? d.kode_aset : '',
+      foto: [],
+    }))
+    const gabungan = [...dariInspeksi, ...dariSarpras]
+      .sort((a, b) => new Date(b.waktuAsli) - new Date(a.waktuAsli))
+      .map((d) => ({ ...d, waktu: formatTanggal(d.waktuAsli) }))
+    return { data: gabungan }
   }
 
   async function hapusFasilitas(id) {
@@ -277,6 +484,7 @@ export function DataProvider({ children }) {
 
     const dihapus = fasilitas.find((f) => f.id === id)
     setFasilitas((lama) => lama.filter((f) => f.id !== id))
+    setUnit((lama) => lama.filter((u) => u.fasilitasId !== id))
     if (dihapus) await catat(`Fasilitas dihapus: ${dihapus.nama} (${dihapus.kodeAset})`)
     return {}
   }
@@ -348,7 +556,16 @@ export function DataProvider({ children }) {
     tambahRuang,
     ubahRuang,
     tambahFasilitas,
+    ubahFasilitas,
     hapusFasilitas,
+    aktifkanPerUnit,
+    unit,
+    ubahUnit,
+    tambahUnit,
+    hapusUnit,
+    ambilRiwayatFasilitas,
+    ubahKondisiFasilitas,
+    ubahKondisiUnit,
   }
   return <DataContext.Provider value={nilai}>{children}</DataContext.Provider>
 }

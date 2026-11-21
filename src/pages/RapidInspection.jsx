@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   Search, Filter, ChevronRight, ChevronDown, ChevronLeft, CheckCircle2, AlertTriangle, XCircle, RefreshCw, CalendarClock, Clock,
-  CalendarDays, Save, Check, CheckCheck, RotateCcw, X, ImagePlus, DoorOpen, BarChart3, Camera, ClipboardList,
+  CalendarDays, Save, Check, CheckCheck, RotateCcw, X, ImagePlus, DoorOpen, BarChart3, Camera, ClipboardList, Wrench,
   AirVent, Projector, Monitor, Lightbulb, Armchair, Table2, Presentation, PlugZap, Package,
 } from 'lucide-react'
 import Header from '../components/Header.jsx'
@@ -30,6 +30,9 @@ const KONDISI = {
   perawatan: { label: 'Bermasalah', ikon: AlertTriangle, pil: 'bg-warn-soft text-warn-ink border-amber-200', kotak: 'bg-warn-soft text-warn' },
   rusak: { label: 'Rusak', ikon: XCircle, pil: 'bg-bad-soft text-bad-ink border-red-200', kotak: 'bg-bad-soft text-bad' },
 }
+
+// Fasilitas yang sedang maintenance (dipasang Sarpras) tidak bisa diubah lewat Rapid Inspection
+const sedangMaintenance = (f) => f.kondisi === 'maintenance'
 
 // ===== Pilihan kondisi berbentuk "pil" berwarna dengan ikon (pengganti <select> biasa) =====
 function PilihKondisi({ nilai, ubah, label }) {
@@ -481,6 +484,7 @@ function FormInspeksi({ ruangAktif, milikRuang, draftBerubah, selesai }) {
 
   // Apakah isian berbeda dari kondisi terakhir?
   function berubah(f) {
+    if (sedangMaintenance(f)) return false
     const n = nilai(f)
     const awal = kondisiTerakhir(f)
     return n.kondisi !== awal.kondisi || (n.kondisi !== 'baik' && n.jumlah !== awal.jumlah)
@@ -512,7 +516,7 @@ function FormInspeksi({ ruangAktif, milikRuang, draftBerubah, selesai }) {
   function tandaiSemuaBaik() {
     const semua = {}
     milikRuang.forEach((f) => {
-      semua[f.id] = { kondisi: 'baik', jumlah: '', catatan: '' }
+      if (!sedangMaintenance(f)) semua[f.id] = { kondisi: 'baik', jumlah: '', catatan: '' }
     })
     setIsian(semua)
   }
@@ -534,7 +538,7 @@ function FormInspeksi({ ruangAktif, milikRuang, draftBerubah, selesai }) {
   const bermasalah = milikRuang.filter((f) => nilai(f).kondisi && nilai(f).kondisi !== 'baik')
   const teksUnit = (f) => {
     const n = nilai(f)
-    const keterangan = n.kondisi === 'rusak' ? 'rusak' : 'bermasalah'
+    const keterangan = { rusak: 'rusak', maintenance: 'sedang maintenance' }[n.kondisi] ?? 'bermasalah'
     return n.jumlah
       ? `${f.nama} (${n.jumlah} dari ${f.jumlah} unit ${keterangan})`
       : `${f.nama} (${keterangan}, jumlah belum diisi)`
@@ -723,7 +727,7 @@ function FormInspeksi({ ruangAktif, milikRuang, draftBerubah, selesai }) {
                             <span className="@min-[34rem]:hidden">
                               {f.jumlah} {f.satuan} ·{' '}
                             </span>
-                            Terakhir: {KONDISI[f.kondisi]?.label ?? '-'}
+                            Terakhir: {KONDISI[f.kondisi]?.label ?? (sedangMaintenance(f) ? 'Maintenance' : '-')}
                             {f.jumlahRusak > 0 && ` (${f.jumlahRusak} unit)`}
                             {adaPerubahan && (
                               <span className="ml-1.5 inline-block align-middle text-[10px] leading-none font-semibold px-1 py-0.5 rounded bg-warn-soft text-warn-ink">
@@ -742,7 +746,16 @@ function FormInspeksi({ ruangAktif, milikRuang, draftBerubah, selesai }) {
                       {/* Kondisi */}
                       <div className="flex flex-col gap-1">
                         <span className="text-xs font-semibold @min-[34rem]:hidden">Kondisi</span>
-                        <PilihKondisi nilai={n.kondisi} ubah={(kode) => ubahKondisi(f, kode)} label={`Kondisi ${f.nama}`} />
+                        {sedangMaintenance(f) ? (
+                          <span
+                            title="Sedang maintenance oleh Sarana Prasarana"
+                            className="h-10 px-3 rounded-full border border-sky-200 bg-sky-50 text-sky-700 inline-flex items-center gap-2 text-sm font-semibold"
+                          >
+                            <Wrench size={16} /> Maintenance
+                          </span>
+                        ) : (
+                          <PilihKondisi nilai={n.kondisi} ubah={(kode) => ubahKondisi(f, kode)} label={`Kondisi ${f.nama}`} />
+                        )}
                       </div>
 
                       {/* Jumlah inspeksi */}
@@ -752,7 +765,7 @@ function FormInspeksi({ ruangAktif, milikRuang, draftBerubah, selesai }) {
                           type="text"
                           inputMode="numeric"
                           aria-label={`Jumlah inspeksi ${f.nama}, maksimal ${f.jumlah}`}
-                          disabled={!butuhJumlah}
+                          disabled={!butuhJumlah || sedangMaintenance(f)}
                           value={butuhJumlah ? n.jumlah : ''}
                           onChange={(e) => ubahJumlah(f, e.target.value)}
                           placeholder={butuhJumlah ? `1–${f.jumlah}` : '-'}
@@ -764,7 +777,8 @@ function FormInspeksi({ ruangAktif, milikRuang, draftBerubah, selesai }) {
                       <label className="col-span-2 @min-[34rem]:col-span-1">
                         <span className="sr-only">Catatan {f.nama}</span>
                         <input
-                          className={gayaInput}
+                          className={`${gayaInput} disabled:bg-slate-50 disabled:text-muted`}
+                          disabled={sedangMaintenance(f)}
                           value={n.catatan}
                           onChange={(e) => ubah(f, { catatan: e.target.value })}
                           placeholder={butuhJumlah ? 'Contoh: tidak dingin, lampu redup' : 'Catatan (opsional)'}
