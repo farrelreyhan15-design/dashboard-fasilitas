@@ -12,13 +12,33 @@ import { buatId } from '../data/konstanta.js'
 
 const DataContext = createContext(null)
 
-// Aturan inti skripsi: status ruang = kondisi fasilitas terburuk di ruang itu.
-// Ruang yang belum punya data fasilitas berstatus "Belum Diinspeksi".
+// Aturan inti skripsi (sama dengan aturan di database):
+//   - ada fasilitas yang rusak SELURUH unitnya  -> 'rusak'     (Tidak Dapat Digunakan)
+//   - ada fasilitas perawatan / rusak sebagian  -> 'perawatan' (Bermasalah)
+//   - semua fasilitas baik                      -> 'baik'
+//   - belum punya data fasilitas                -> 'belum'     (Belum Diinspeksi)
 export function hitungStatusRuang(daftarFasilitas) {
   if (daftarFasilitas.length === 0) return 'belum'
-  if (daftarFasilitas.some((f) => f.kondisi === 'rusak')) return 'rusak'
-  if (daftarFasilitas.some((f) => f.kondisi === 'perawatan')) return 'perawatan'
+  if (daftarFasilitas.some((f) => f.kondisi === 'rusak' && (f.jumlahRusak || f.jumlah) >= f.jumlah)) return 'rusak'
+  if (daftarFasilitas.some((f) => f.kondisi !== 'baik')) return 'perawatan'
   return 'baik'
+}
+
+const BUCKET_FOTO = 'dokumentasi-inspeksi'
+
+// Memperkecil foto dari kamera HP (bisa 5-10 MB) menjadi maksimal 1280 px, format JPEG
+async function kecilkanFoto(file) {
+  try {
+    const gambar = await createImageBitmap(file)
+    const skala = Math.min(1, 1280 / Math.max(gambar.width, gambar.height))
+    const kanvas = document.createElement('canvas')
+    kanvas.width = Math.round(gambar.width * skala)
+    kanvas.height = Math.round(gambar.height * skala)
+    kanvas.getContext('2d').drawImage(gambar, 0, 0, kanvas.width, kanvas.height)
+    return await new Promise((selesai) => kanvas.toBlob(selesai, 'image/jpeg', 0.8))
+  } catch {
+    return file // kalau gagal diperkecil, kirim foto aslinya
+  }
 }
 
 // ===== Penerjemah: nama kolom database (snake_case) <-> nama di aplikasi (camelCase) =====
@@ -48,7 +68,6 @@ function ruangDariDb(r) {
     luas: r.luas,
     penanggungJawab: r.penanggung_jawab ?? '',
     deskripsi: r.deskripsi ?? '',
-    inspeksiTerakhir: null,
   }
 }
 
@@ -75,10 +94,32 @@ function fasilitasDariDb(f) {
     nama: f.nama,
     kategori: f.kategori,
     jumlah: f.jumlah,
+    jumlahRusak: f.jumlah_rusak ?? 0,
     satuan: f.satuan,
     kondisi: f.kondisi,
     catatan: f.catatan ?? '',
     terakhirDicek: formatTanggal(f.diperbarui_pada),
+  }
+}
+
+function inspeksiDariDb(i) {
+  return {
+    id: String(i.id),
+    ruangId: String(i.ruangan_id),
+    pemeriksa: i.nama_pemeriksa,
+    peran: i.peran,
+    catatan: i.catatan ?? '',
+    kondisiRuangan: i.kondisi_ruangan,
+    durasiDetik: i.durasi_detik,
+    foto: (i.foto ?? []).map((path) => supabase.storage.from(BUCKET_FOTO).getPublicUrl(path).data.publicUrl),
+    waktu: formatTanggal(i.waktu),
+    waktuAsli: i.waktu,
+    detail: (i.inspeksi_detail ?? []).map((d) => ({
+      nama: d.nama_fasilitas,
+      kondisi: d.kondisi,
+      jumlah: d.jumlah_rusak,
+      catatan: d.catatan ?? '',
+    })),
   }
 }
 
@@ -98,6 +139,7 @@ export function DataProvider({ children }) {
   const [ruang, setRuang] = useState([])
   const [fasilitas, setFasilitas] = useState([])
   const [aktivitas, setAktivitas] = useState([])
+  const [inspeksi, setInspeksi] = useState([])
   const [memuat, setMemuat] = useState(true)
   const [galatMuat, setGalatMuat] = useState('')
 
@@ -108,18 +150,20 @@ export function DataProvider({ children }) {
     let masihTerpasang = true
 
     async function muat() {
-      const [hasilRuang, hasilFasilitas, hasilAktivitas] = await Promise.all([
+      const [hasilRuang, hasilFasilitas, hasilAktivitas, hasilInspeksi] = await Promise.all([
         supabase.from('ruangan').select('*').order('kampus').order('gedung').order('ruangan'),
         supabase.from('fasilitas').select('*').order('id'),
         supabase.from('aktivitas').select('*').order('waktu', { ascending: false }).limit(20),
+        supabase.from('inspeksi').select('*').order('waktu', { ascending: false }).limit(1000),
       ])
       if (!masihTerpasang) return
 
-      const galat = hasilRuang.error ?? hasilFasilitas.error ?? hasilAktivitas.error
+      const galat = hasilRuang.error ?? hasilFasilitas.error ?? hasilAktivitas.error ?? hasilInspeksi.error
       setGalatMuat(galat ? `Gagal memuat data: ${galat.message}` : '')
       setRuang((hasilRuang.data ?? []).map(ruangDariDb))
       setFasilitas((hasilFasilitas.data ?? []).map(fasilitasDariDb))
       setAktivitas((hasilAktivitas.data ?? []).map(aktivitasDariDb))
+      setInspeksi((hasilInspeksi.data ?? []).map(inspeksiDariDb))
       setMemuat(false)
     }
 
@@ -129,19 +173,21 @@ export function DataProvider({ children }) {
     }
   }, [idPengguna])
 
-  // Ruang lengkap dengan status dan jumlah fasilitasnya
+  // Ruang lengkap dengan status, jumlah fasilitas, dan inspeksi terakhirnya
   const ruangDenganStatus = useMemo(
     () =>
       ruang.map((r) => {
         const milik = fasilitas.filter((f) => f.ruangId === r.id)
+        const terakhir = inspeksi.find((i) => i.ruangId === r.id) // daftar inspeksi sudah urut dari yang terbaru
         return {
           ...r,
           jumlahFasilitas: milik.length,
           jumlahMasalah: milik.filter((f) => f.kondisi !== 'baik').length,
           status: hitungStatusRuang(milik),
+          inspeksiTerakhir: terakhir ? `${terakhir.waktu} oleh ${terakhir.pemeriksa}` : null,
         }
       }),
-    [ruang, fasilitas],
+    [ruang, fasilitas, inspeksi],
   )
 
   // Mencatat aktivitas ke database dan menampilkannya di dashboard
@@ -235,10 +281,68 @@ export function DataProvider({ children }) {
     return {}
   }
 
+  // ===== Rapid Inspection =====
+  // hasil = [{ fasilitasId, kondisi, jumlah, catatan }, ...], daftarFoto = file gambar dari HP/laptop
+  async function simpanInspeksi(ruangId, catatan, hasil, durasiDetik, daftarFoto = []) {
+    // 1) Unggah foto dulu ke Storage, di folder milik akun yang login
+    const pathFoto = []
+    for (const [urutan, file] of daftarFoto.entries()) {
+      const foto = await kecilkanFoto(file)
+      const path = `${pengguna.id}/${Date.now()}-${urutan + 1}.jpg`
+      const { error } = await supabase.storage.from(BUCKET_FOTO).upload(path, foto, { contentType: 'image/jpeg' })
+      if (error) return { error: `Foto ke-${urutan + 1} gagal diunggah: ${error.message}` }
+      pathFoto.push(path)
+    }
+
+    // 2) Simpan hasil inspeksi lewat fungsi database
+    const { error } = await supabase.rpc('simpan_inspeksi', {
+      p_ruangan_id: Number(ruangId),
+      p_catatan: catatan,
+      p_hasil: hasil.map((h) => ({
+        fasilitas_id: Number(h.fasilitasId),
+        kondisi: h.kondisi,
+        jumlah: h.kondisi === 'baik' ? null : Number(h.jumlah),
+        catatan: h.catatan,
+      })),
+      p_durasi: durasiDetik,
+      p_foto: pathFoto,
+    })
+    if (error) return { error: error.code === 'P0001' ? error.message : pesanGalat(error) }
+
+    // Ambil ulang data yang berubah: fasilitas ruangan ini, inspeksi terbaru, aktivitas terbaru
+    const [hasilFasilitas, hasilInspeksi, hasilAktivitas] = await Promise.all([
+      supabase.from('fasilitas').select('*').eq('ruangan_id', Number(ruangId)).order('id'),
+      supabase.from('inspeksi').select('*').order('waktu', { ascending: false }).limit(1000),
+      supabase.from('aktivitas').select('*').order('waktu', { ascending: false }).limit(20),
+    ])
+    if (hasilFasilitas.data) {
+      const baru = hasilFasilitas.data.map(fasilitasDariDb)
+      setFasilitas((lama) => [...lama.filter((f) => f.ruangId !== ruangId), ...baru])
+    }
+    if (hasilInspeksi.data) setInspeksi(hasilInspeksi.data.map(inspeksiDariDb))
+    if (hasilAktivitas.data) setAktivitas(hasilAktivitas.data.map(aktivitasDariDb))
+    return {}
+  }
+
+  // Riwayat inspeksi satu ruangan, lengkap dengan detail fasilitasnya
+  async function ambilRiwayatInspeksi(ruangId) {
+    const { data, error } = await supabase
+      .from('inspeksi')
+      .select('*, inspeksi_detail(nama_fasilitas, kondisi, jumlah_rusak, catatan)')
+      .eq('ruangan_id', Number(ruangId))
+      .order('waktu', { ascending: false })
+      .limit(50)
+    if (error) return { error: error.message, data: [] }
+    return { data: data.map(inspeksiDariDb) }
+  }
+
   const nilai = {
     ruang: ruangDenganStatus,
     fasilitas,
     aktivitas,
+    inspeksi,
+    simpanInspeksi,
+    ambilRiwayatInspeksi,
     memuat,
     galatMuat,
     tambahRuang,

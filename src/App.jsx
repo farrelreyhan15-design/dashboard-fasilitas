@@ -6,6 +6,7 @@ import DataFasilitas from './pages/DataFasilitas.jsx'
 import SegeraHadir from './pages/SegeraHadir.jsx'
 import Login from './pages/Login.jsx'
 import Pengaturan from './pages/Pengaturan.jsx'
+import RapidInspection from './pages/RapidInspection.jsx'
 import { useAuth } from './context/AuthContext.jsx'
 
 // Penjaga 1: kalau belum login, arahkan ke halaman login
@@ -53,7 +54,7 @@ export default function App() {
           path="/rapid-inspection"
           element={
             <HanyaUntuk aksi="rapidInspection">
-              <SegeraHadir judul="Rapid Inspection" />
+              <RapidInspection />
             </HanyaUntuk>
           }
         />

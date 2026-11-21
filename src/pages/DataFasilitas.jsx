@@ -192,6 +192,8 @@ export default function DataFasilitas() {
                       <td className="px-4 py-3">{f.kategori}</td>
                       <td className="px-4 py-3">
                         {f.jumlah} {f.satuan}
+                        {f.jumlahRusak > 0 && <span className="block text-xs font-semibold text-bad-ink">{f.jumlahRusak} bermasalah</span>}
+
                       </td>
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center gap-1.5 text-xs font-mono px-2 py-1 rounded-md bg-slate-100 text-slate-700">
