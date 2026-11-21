@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
-  Search, Filter, ChevronRight, ChevronLeft, CheckCircle2, AlertTriangle, XCircle, RefreshCw, CalendarClock, Clock,
+  Search, Filter, ChevronRight, ChevronDown, ChevronLeft, CheckCircle2, AlertTriangle, XCircle, RefreshCw, CalendarClock, Clock,
   CalendarDays, Save, Check, CheckCheck, RotateCcw, X, ImagePlus, DoorOpen, BarChart3, Camera, ClipboardList,
   AirVent, Projector, Monitor, Lightbulb, Armchair, Table2, Presentation, PlugZap, Package,
 } from 'lucide-react'
@@ -24,11 +24,91 @@ const STATUS_INSPEKSI = {
   tertunda: { label: 'Tertunda', ikon: AlertTriangle, gaya: 'bg-bad-soft text-bad-ink' },
 }
 
-// ===== Pilihan kondisi fasilitas =====
+// ===== Pilihan kondisi fasilitas: label, ikon, dan warnanya =====
 const KONDISI = {
-  baik: { label: 'Baik', gaya: 'bg-ok-soft text-ok-ink border-green-200' },
-  perawatan: { label: 'Bermasalah', gaya: 'bg-warn-soft text-warn-ink border-amber-200' },
-  rusak: { label: 'Rusak', gaya: 'bg-bad-soft text-bad-ink border-red-200' },
+  baik: { label: 'Baik', ikon: CheckCircle2, pil: 'bg-ok-soft text-ok-ink border-green-200', kotak: 'bg-ok-soft text-ok' },
+  perawatan: { label: 'Bermasalah', ikon: AlertTriangle, pil: 'bg-warn-soft text-warn-ink border-amber-200', kotak: 'bg-warn-soft text-warn' },
+  rusak: { label: 'Rusak', ikon: XCircle, pil: 'bg-bad-soft text-bad-ink border-red-200', kotak: 'bg-bad-soft text-bad' },
+}
+
+// ===== Pilihan kondisi berbentuk "pil" berwarna dengan ikon (pengganti <select> biasa) =====
+function PilihKondisi({ nilai, ubah, label }) {
+  const [buka, setBuka] = useState(false)
+  const [keAtas, setKeAtas] = useState(false)
+  const wadah = useRef(null)
+  const k = KONDISI[nilai]
+
+  // Tutup menu kalau klik di luar atau tekan Esc
+  useEffect(() => {
+    if (!buka) return
+    const klikLuar = (e) => {
+      if (!wadah.current?.contains(e.target)) setBuka(false)
+    }
+    const tekanEsc = (e) => {
+      if (e.key === 'Escape') setBuka(false)
+    }
+    document.addEventListener('pointerdown', klikLuar)
+    document.addEventListener('keydown', tekanEsc)
+    return () => {
+      document.removeEventListener('pointerdown', klikLuar)
+      document.removeEventListener('keydown', tekanEsc)
+    }
+  }, [buka])
+
+  function bukaTutup() {
+    // Kalau ruang di bawah sempit, menu dibuka ke atas
+    const kotak = wadah.current.getBoundingClientRect()
+    setKeAtas(window.innerHeight - kotak.bottom < 190)
+    setBuka(!buka)
+  }
+
+  function pilih(kode) {
+    ubah(kode)
+    setBuka(false)
+  }
+
+  return (
+    <div ref={wadah} className="relative">
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={buka}
+        aria-label={`${label}: ${k ? k.label : 'belum dipilih'}`}
+        onClick={bukaTutup}
+        className={`w-full h-10 pl-2.5 pr-3 rounded-full border inline-flex items-center gap-2 text-sm font-semibold
+          ${k ? k.pil : 'bg-white border-slate-300 text-muted'}`}
+      >
+        {k && <k.ikon size={18} className="shrink-0" />}
+        <span className="flex-1 text-left">{k ? k.label : 'Pilih…'}</span>
+        <ChevronDown size={16} className={`shrink-0 transition-transform ${buka ? 'rotate-180' : ''}`} />
+      </button>
+
+      {buka && (
+        <ul
+          role="listbox"
+          aria-label={label}
+          className={`absolute z-30 left-0 w-full min-w-44 bg-white border border-line rounded-xl shadow-lg p-1.5 flex flex-col gap-0.5
+            ${keAtas ? 'bottom-full mb-1.5' : 'top-full mt-1.5'}`}
+        >
+          {Object.entries(KONDISI).map(([kode, o]) => (
+            <li key={kode} role="option" aria-selected={nilai === kode}>
+              <button
+                type="button"
+                onClick={() => pilih(kode)}
+                className={`w-full flex items-center gap-2.5 p-1.5 rounded-lg text-sm font-semibold hover:bg-slate-50 ${nilai === kode ? 'bg-slate-50' : ''}`}
+              >
+                <span className={`size-8 shrink-0 grid place-items-center rounded-lg ${o.kotak}`}>
+                  <o.ikon size={18} />
+                </span>
+                {o.label}
+                {nilai === kode && <Check size={16} className="ml-auto text-primary" />}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
 }
 
 // ===== Draft: isian yang belum selesai disimpan di perangkat ini =====
@@ -209,7 +289,7 @@ export default function RapidInspection() {
         ))}
       </section>
 
-      <div className="grid gap-4 items-start xl:grid-cols-[minmax(290px,340px)_minmax(0,1fr)] 2xl:grid-cols-[minmax(300px,350px)_minmax(0,1fr)_minmax(280px,330px)]">
+      <div className="grid gap-4 items-start xl:max-[1799px]:grid-rows-[auto_1fr] xl:max-[1799px]:grid-cols-[minmax(290px,340px)_minmax(0,1fr)] min-[1800px]:grid-cols-[minmax(300px,350px)_minmax(0,1fr)_minmax(280px,330px)]">
         {/* ===== Kiri: Jadwal & Daftar Inspeksi ===== */}
         <section aria-label="Jadwal dan daftar inspeksi" className="bg-white border border-line rounded-2xl p-4 flex flex-col gap-3.5 xl:col-start-1 xl:row-start-1">
           <h2 className="text-lg font-extrabold">Jadwal &amp; Daftar Inspeksi</h2>
@@ -349,7 +429,7 @@ export default function RapidInspection() {
         </section>
 
         {/* ===== Tengah: Form Rapid Inspection ===== */}
-        <div ref={areaForm} className="scroll-mt-4 xl:col-start-2 xl:row-start-1 xl:row-span-2 2xl:row-span-1">
+        <div ref={areaForm} className="scroll-mt-4 xl:col-start-2 xl:row-start-1 xl:max-[1799px]:row-span-2">
           {ruangAktif ? (
             <FormInspeksi
               key={`${ruangAktif.id}-${versi}`}
@@ -368,7 +448,7 @@ export default function RapidInspection() {
         </div>
 
         {/* ===== Kanan: Riwayat dan ringkasan ruangan ===== */}
-        <div className="flex flex-col gap-4 xl:col-start-1 xl:row-start-2 2xl:col-start-3 2xl:row-start-1">
+        <div className="flex flex-col gap-4 xl:max-[1799px]:col-start-1 xl:max-[1799px]:row-start-2 min-[1800px]:col-start-3 min-[1800px]:row-start-1">
           {ruangAktif && <PanelRiwayat key={`${ruangAktif.id}-${versi}`} ruangAktif={ruangAktif} />}
         </div>
       </div>
@@ -455,7 +535,9 @@ function FormInspeksi({ ruangAktif, milikRuang, draftBerubah, selesai }) {
   const teksUnit = (f) => {
     const n = nilai(f)
     const keterangan = n.kondisi === 'rusak' ? 'rusak' : 'bermasalah'
-    return `${f.nama} (${n.jumlah || '?'} dari ${f.jumlah} unit ${keterangan})`
+    return n.jumlah
+      ? `${f.nama} (${n.jumlah} dari ${f.jumlah} unit ${keterangan})`
+      : `${f.nama} (${keterangan}, jumlah belum diisi)`
   }
   const rusakTotal = bermasalah.filter((f) => nilai(f).kondisi === 'rusak' && Number(nilai(f).jumlah) === f.jumlah)
   const rusakSebagian = bermasalah.filter((f) => !rusakTotal.includes(f))
@@ -612,12 +694,12 @@ function FormInspeksi({ ruangAktif, milikRuang, draftBerubah, selesai }) {
               Kondisi terisi otomatis dari inspeksi terakhir. Kalau tidak ada perubahan, biarkan saja. Ubah hanya fasilitas yang kondisinya berubah.
             </p>
 
-            <div className="border border-line rounded-xl overflow-hidden">
-              <div className="hidden md:grid grid-cols-[minmax(0,1.3fr)_64px_140px_84px_minmax(0,1.6fr)] gap-3 px-3.5 py-2.5 bg-slate-50 text-[13px] font-bold text-slate-600">
+            <div className="@container border border-line rounded-xl">
+              <div className="hidden @min-[34rem]:grid grid-cols-[minmax(96px,1fr)_48px_150px_56px_minmax(120px,1.4fr)] gap-2.5 px-3.5 py-2.5 bg-slate-50 rounded-t-xl text-[13px] font-bold text-slate-600">
                 <span>Fasilitas</span>
                 <span>Jumlah</span>
                 <span>Kondisi</span>
-                <span>Jml Inspeksi</span>
+                <span>Jml Insp.</span>
                 <span>Catatan (Opsional)</span>
               </div>
               <ul>
@@ -629,52 +711,43 @@ function FormInspeksi({ ruangAktif, milikRuang, draftBerubah, selesai }) {
                   return (
                     <li
                       key={f.id}
-                      className={`grid grid-cols-[1fr_6rem] gap-2 md:grid-cols-[minmax(0,1.3fr)_64px_140px_84px_minmax(0,1.6fr)] md:gap-3 items-center px-3.5 py-3 border-t border-line first:border-t-0 md:first:border-t
+                      className={`grid grid-cols-[1fr_6rem] gap-2 @min-[34rem]:grid-cols-[minmax(96px,1fr)_48px_150px_56px_minmax(120px,1.4fr)] @min-[34rem]:gap-2.5 items-center px-3.5 py-3 border-t border-line first:border-t-0 @min-[34rem]:first:border-t
                         ${adaPerubahan ? 'bg-amber-50/70' : ''}`}
                     >
                       {/* Fasilitas */}
-                      <div className="col-span-2 md:col-span-1 flex items-center gap-2.5 min-w-0">
+                      <div className="col-span-2 @min-[34rem]:col-span-1 flex items-center gap-2.5 min-w-0">
                         <Ikon size={20} className="text-slate-600 shrink-0" />
                         <div className="min-w-0">
-                          <p className="font-semibold leading-snug">
-                            {f.nama}
-                            {adaPerubahan && (
-                              <span className="ml-1.5 align-middle text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-warn-soft text-warn-ink">Berubah</span>
-                            )}
-                          </p>
+                          <p className="font-semibold leading-snug break-words">{f.nama}</p>
                           <p className="text-xs text-muted">
-                            <span className="md:hidden">
+                            <span className="@min-[34rem]:hidden">
                               {f.jumlah} {f.satuan} ·{' '}
                             </span>
                             Terakhir: {KONDISI[f.kondisi]?.label ?? '-'}
                             {f.jumlahRusak > 0 && ` (${f.jumlahRusak} unit)`}
+                            {adaPerubahan && (
+                              <span className="ml-1.5 inline-block align-middle text-[10px] leading-none font-semibold px-1 py-0.5 rounded bg-warn-soft text-warn-ink">
+                                Berubah
+                              </span>
+                            )}
                           </p>
                         </div>
                       </div>
 
                       {/* Jumlah terdata */}
-                      <span className="hidden md:block text-sm">
+                      <span className="hidden @min-[34rem]:block text-sm">
                         {f.jumlah} {f.satuan}
                       </span>
 
                       {/* Kondisi */}
-                      <label className="flex flex-col gap-1">
-                        <span className="text-xs font-semibold md:sr-only">Kondisi</span>
-                        <select
-                          value={n.kondisi}
-                          onChange={(e) => ubahKondisi(f, e.target.value)}
-                          className={`${gayaInput} font-semibold ${n.kondisi ? KONDISI[n.kondisi].gaya : 'text-muted'}`}
-                        >
-                          <option value="">Pilih…</option>
-                          <option value="baik">Baik</option>
-                          <option value="perawatan">Bermasalah</option>
-                          <option value="rusak">Rusak</option>
-                        </select>
-                      </label>
+                      <div className="flex flex-col gap-1">
+                        <span className="text-xs font-semibold @min-[34rem]:hidden">Kondisi</span>
+                        <PilihKondisi nilai={n.kondisi} ubah={(kode) => ubahKondisi(f, kode)} label={`Kondisi ${f.nama}`} />
+                      </div>
 
                       {/* Jumlah inspeksi */}
                       <label className="flex flex-col gap-1">
-                        <span className="text-xs font-semibold md:sr-only">Jml inspeksi</span>
+                        <span className="text-xs font-semibold @min-[34rem]:sr-only">Jml inspeksi</span>
                         <input
                           type="text"
                           inputMode="numeric"
@@ -683,12 +756,12 @@ function FormInspeksi({ ruangAktif, milikRuang, draftBerubah, selesai }) {
                           value={butuhJumlah ? n.jumlah : ''}
                           onChange={(e) => ubahJumlah(f, e.target.value)}
                           placeholder={butuhJumlah ? `1–${f.jumlah}` : '-'}
-                          className={`${gayaInput} text-center px-2 disabled:bg-slate-50 disabled:text-muted`}
+                          className="w-full @min-[34rem]:w-14 h-10 px-1 rounded-lg border border-slate-300 bg-white text-sm text-center font-semibold focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:bg-slate-50 disabled:text-muted"
                         />
                       </label>
 
                       {/* Catatan */}
-                      <label className="col-span-2 md:col-span-1">
+                      <label className="col-span-2 @min-[34rem]:col-span-1">
                         <span className="sr-only">Catatan {f.nama}</span>
                         <input
                           className={gayaInput}
@@ -708,7 +781,7 @@ function FormInspeksi({ ruangAktif, milikRuang, draftBerubah, selesai }) {
           <div className="flex flex-col gap-2.5">
             <h3 className="text-base font-extrabold">Dokumentasi (Opsional)</h3>
             <p className="text-[13px] text-muted -mt-1.5">Foto alat atau fasilitas yang bermasalah. Maksimal {MAKS_FOTO} foto.</p>
-            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2.5">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(105px,150px))] gap-2.5">
               {foto.map((f, i) => (
                 <div key={f.url} className="relative aspect-[4/3] rounded-xl overflow-hidden border border-line bg-slate-100">
                   <img src={f.url} alt={`Foto dokumentasi ${i + 1}`} className="size-full object-cover" />
