@@ -242,6 +242,7 @@ export function DataProvider({ children }) {
   const [jadwal, setJadwal] = useState([])
   const [memuat, setMemuat] = useState(true)
   const [galatMuat, setGalatMuat] = useState('')
+  const [versiData, setVersiData] = useState(0) // dinaikkan untuk memuat ulang semua data
 
   // Ambil semua data setiap kali ada pengguna yang login
   const idPengguna = pengguna?.id
@@ -274,7 +275,7 @@ export function DataProvider({ children }) {
     return () => {
       masihTerpasang = false
     }
-  }, [idPengguna])
+  }, [idPengguna, versiData])
 
   // Ruang lengkap dengan status, jumlah fasilitas, dan inspeksi terakhirnya
   const ruangDenganStatus = useMemo(
@@ -826,6 +827,7 @@ export function DataProvider({ children }) {
     buatTiketPreventif,
     ambilLog,
     ambilJadwalRuangan,
+    muatUlang: () => setVersiData((v) => v + 1),
   }
   return <DataContext.Provider value={nilai}>{children}</DataContext.Provider>
 }

@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
-import { Bell, LogOut } from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import { useAuth, NAMA_PERAN } from '../context/AuthContext.jsx'
+import Lonceng from './Lonceng.jsx'
 
 // Mengambil huruf depan nama, contoh "Farrel Reyhan" -> "FR"
 function inisial(nama) {
@@ -17,7 +18,7 @@ export default function Header({ judul, subjudul }) {
   const { pengguna, logout } = useAuth()
   const navigate = useNavigate()
 
-    async function keluar() {
+  async function keluar() {
     await logout()
     navigate('/login', { replace: true })
   }
@@ -30,14 +31,7 @@ export default function Header({ judul, subjudul }) {
       </div>
 
       <div className="flex items-center gap-3">
-        <button
-          type="button"
-          aria-label="Notifikasi, 3 baru"
-          className="relative size-11 grid place-items-center rounded-xl border border-line bg-white hover:bg-slate-50"
-        >
-          <Bell size={20} />
-          <span className="absolute top-2 right-2.5 size-2.5 rounded-full bg-bad" />
-        </button>
+        <Lonceng />
 
         <div className="flex items-center gap-3 pl-3 border-l border-line">
           <span className="size-11 rounded-full bg-primary text-white grid place-items-center font-bold">
