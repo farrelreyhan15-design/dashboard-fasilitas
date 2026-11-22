@@ -4,6 +4,7 @@ import {
   Plus, Search, Pencil, Trash2, QrCode, CheckCircle2, AlertTriangle, XCircle, X, ChevronLeft, ChevronRight,
   Boxes, Package, MapPin, Clock, History, ClipboardList, Layers, ArrowRight, Info, Wrench, ScanSearch, UserCog,
   AirVent, Projector, Monitor, Lightbulb, Armchair, Table2, Presentation, PlugZap, DoorOpen,
+  FileSpreadsheet, Printer, Banknote, ImagePlus, ImageOff, Tag, BadgeCheck,
 } from 'lucide-react'
 import Header from '../components/Header.jsx'
 import InfoMuat from '../components/InfoMuat.jsx'
@@ -13,10 +14,24 @@ import { useData } from '../context/DataContext.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { KATEGORI, SATUAN, STATUS, DAFTAR_KAMPUS, FASILITAS_STANDAR, gedungDiKampus, buatId } from '../data/konstanta.js'
 import { PilStatus } from './Pemeliharaan.jsx'
+import {
+  ASAL_PEROLEHAN, SARAN_SUMBER_DANA, SARAN_PENANGGUNG_JAWAB, rupiah, rupiahRingkas, rincianKondisi, nilaiFasilitas, dataKurang,
+  unitLengkap, unduhExcelInventaris, cetakInventaris,
+} from '../lib/inventaris.js'
 
 const PER_HALAMAN = 10
-const FORM_KOSONG = { ruangId: '', nama: '', kategori: 'Elektronik', jumlah: '1', satuan: 'unit', kondisi: 'baik', lacakPerUnit: false }
-const UNIT_KOSONG = { posisi: '', merek: '', model: '', spesifikasi: '', nomorSeri: '', tahunPengadaan: '' }
+const MAKS_FOTO = 5
+// Data inventaris kelompok fasilitas (semuanya opsional)
+const INVENTARIS_KOSONG = {
+  merek: '', model: '', spesifikasi: '', tahunPengadaan: '', asalPerolehan: '', hargaSatuan: '', sumberDana: '', penanggungJawab: '', keterangan: '',
+}
+const FORM_KOSONG = { ruangId: '', nama: '', kategori: 'Elektronik', jumlah: '1', satuan: 'unit', kondisi: 'baik', lacakPerUnit: false, ...INVENTARIS_KOSONG }
+const UNIT_KOSONG = {
+  posisi: '', merek: '', model: '', spesifikasi: '', nomorSeri: '', tahunPengadaan: '', asalPerolehan: '', hargaPerolehan: '', sumberDana: '',
+}
+
+// Angka harga dari database -> isian form ('' bila kosong)
+const hargaKeForm = (n) => (n === null || n === undefined ? '' : String(n))
 
 // Singkatan untuk kode aset. Fasilitas standar memakai singkatan bakunya (Proyektor -> PRJ),
 // selain itu dari huruf depan setiap kata, contoh "Kursi Mahasiswa" -> "KM"
@@ -45,22 +60,6 @@ function ikonFasilitas(nama) {
   return Package
 }
 
-// Rincian unit per kondisi untuk satu kelompok fasilitas.
-// Untuk barang per unit, dihitung dari kondisi masing-masing unit.
-function rincianKondisi(f, daftarUnit = []) {
-  if (f.lacakPerUnit && daftarUnit.length) {
-    const hitung = (k) => daftarUnit.filter((u) => u.kondisi === k).length
-    return { baik: hitung('baik'), perawatan: hitung('perawatan'), rusak: hitung('rusak'), maintenance: hitung('maintenance') }
-  }
-  const bermasalah = f.kondisi === 'baik' ? 0 : f.jumlahRusak || f.jumlah
-  return {
-    baik: f.jumlah - bermasalah,
-    perawatan: f.kondisi === 'perawatan' ? bermasalah : 0,
-    rusak: f.kondisi === 'rusak' ? bermasalah : 0,
-    maintenance: f.kondisi === 'maintenance' ? bermasalah : 0,
-  }
-}
-
 const SEMUA_KONDISI = ['baik', 'perawatan', 'rusak', 'maintenance']
 const GAYA_KONDISI = {
   baik: { ikon: CheckCircle2, aktif: 'border-ok bg-ok-soft text-ok-ink' },
@@ -71,7 +70,8 @@ const GAYA_KONDISI = {
 
 export default function DataFasilitas() {
   const { ruang, fasilitas, unit, tambahFasilitas } = useData()
-  const { bisa } = useAuth()
+  const { bisa, pengguna } = useAuth()
+  const lihatNilai = bisa('kelolaData') // harga & nilai aset hanya untuk Sarpras
   const [params, setParams] = useSearchParams()
 
   // Filter
@@ -81,7 +81,9 @@ export default function DataFasilitas() {
   const [ruangFilter, setRuangFilter] = useState(() => ruangDariTautan?.id ?? 'Semua')
   const [kategori, setKategori] = useState('Semua')
   const [kondisi, setKondisi] = useState('Semua')
+  const [kelengkapan, setKelengkapan] = useState('Semua')
   const [cari, setCari] = useState('')
+  const [mengunduh, setMengunduh] = useState(false)
   const [halaman, setHalaman] = useState(1)
 
   const [dipilihId, setDipilihId] = useState(null)
@@ -101,14 +103,18 @@ export default function DataFasilitas() {
   const fasilitasTampil = fasilitas.filter((f) => {
     const r = ruangById[f.ruangId]
     if (!r) return false
-    const teks = `${f.nama} ${f.kodeAset} ${r.nama}`.toLowerCase()
-    const kodeUnitCocok = unit.some((u) => u.fasilitasId === f.id && u.kodeAset.toLowerCase().includes(cari.toLowerCase()))
+    const teks = `${f.nama} ${f.kodeAset} ${r.nama} ${f.merek} ${f.model} ${f.spesifikasi} ${f.sumberDana} ${f.penanggungJawab}`.toLowerCase()
+    const kodeUnitCocok = unit.some(
+      (u) => u.fasilitasId === f.id && `${u.kodeAset} ${u.nomorSeri} ${u.merek} ${u.model}`.toLowerCase().includes(cari.toLowerCase()),
+    )
+    const lengkap = dataKurang(f).length === 0
     return (
       (kampus === 'Semua' || r.kampus === kampus) &&
       (gedung === 'Semua' || r.gedung === gedung) &&
       (ruangFilter === 'Semua' || r.id === ruangFilter) &&
       (kategori === 'Semua' || f.kategori === kategori) &&
       (kondisi === 'Semua' || f.kondisi === kondisi) &&
+      (kelengkapan === 'Semua' || (kelengkapan === 'lengkap') === lengkap) &&
       (teks.includes(cari.toLowerCase()) || (cari && kodeUnitCocok))
     )
   })
@@ -130,9 +136,10 @@ export default function DataFasilitas() {
         perawatan: jml.perawatan + k.perawatan,
         rusak: jml.rusak + k.rusak,
         maintenance: jml.maintenance + k.maintenance,
+        nilai: jml.nilai + (nilaiFasilitas(f, unit.filter((u) => u.fasilitasId === f.id)) ?? 0),
       }
     },
-    { unit: 0, baik: 0, perawatan: 0, rusak: 0, maintenance: 0 },
+    { unit: 0, baik: 0, perawatan: 0, rusak: 0, maintenance: 0, nilai: 0 },
   )
   const kartu = [
     { label: 'Jenis Fasilitas', nilai: fasilitasTampil.length, satuan: 'kelompok', ikon: Layers, warna: 'bg-primary-soft text-primary' },
@@ -141,7 +148,36 @@ export default function DataFasilitas() {
     { label: 'Bermasalah', nilai: total.perawatan, satuan: 'unit', ikon: AlertTriangle, warna: 'bg-warn-soft text-amber-700' },
     { label: 'Rusak', nilai: total.rusak, satuan: 'unit', ikon: XCircle, warna: 'bg-bad-soft text-bad' },
     { label: 'Maintenance', nilai: total.maintenance, satuan: 'unit', ikon: Wrench, warna: 'bg-sky-50 text-sky-700' },
+    ...(lihatNilai
+      ? [{ label: 'Nilai Aset', nilai: total.nilai ? rupiahRingkas(total.nilai) : '-', satuan: total.nilai ? '' : 'harga belum diisi', ikon: Banknote, warna: 'bg-emerald-50 text-emerald-700', judul: rupiah(total.nilai) }]
+      : []),
   ]
+
+  // Keterangan filter untuk judul file unduhan
+  const teksFilter =
+    [
+      kampus !== 'Semua' && kampus,
+      gedung !== 'Semua' && `Gedung ${gedung}`,
+      ruangFilter !== 'Semua' && ruangById[ruangFilter]?.nama,
+      kategori !== 'Semua' && `Kategori ${kategori}`,
+      kondisi !== 'Semua' && `Kondisi ${STATUS[kondisi].label}`,
+      kelengkapan !== 'Semua' && (kelengkapan === 'lengkap' ? 'Data lengkap' : 'Data belum lengkap'),
+      cari && `Pencarian "${cari}"`,
+    ]
+      .filter(Boolean)
+      .join(', ') || 'Semua fasilitas'
+  const bahanUnduh = { daftar: fasilitasTampil, unit, ruangById, teksFilter, pengguna, lihatNilai }
+
+  async function unduhExcel() {
+    setMengunduh(true)
+    try {
+      await unduhExcelInventaris(bahanUnduh)
+    } catch (e) {
+      window.alert(`Excel gagal dibuat: ${e.message}`)
+    } finally {
+      setMengunduh(false)
+    }
+  }
 
   const gantiFilter = (aksi) => (e) => {
     aksi(e.target.value)
@@ -151,7 +187,7 @@ export default function DataFasilitas() {
 
   return (
     <>
-      <Header judul="Data Fasilitas" subjudul="Seluruh fasilitas per ruangan: kondisi, lokasi, unit, dan riwayat perubahan kondisinya" />
+      <Header judul="Data Fasilitas" subjudul="Inventaris barang UISI per ruangan: identitas, perolehan, kondisi, unit, dan riwayatnya" />
       <InfoMuat />
 
       {pesan && (
@@ -165,9 +201,9 @@ export default function DataFasilitas() {
       )}
 
       {/* ===== Kartu ringkasan ===== */}
-      <section aria-label="Ringkasan fasilitas" className="grid gap-3 grid-cols-2 md:grid-cols-3 2xl:grid-cols-6">
-        {kartu.map(({ label, nilai, satuan, ikon: Ikon, warna }) => (
-          <div key={label} className="bg-white border border-line rounded-2xl p-4 flex items-center gap-3">
+      <section aria-label="Ringkasan fasilitas" className={`grid gap-3 grid-cols-2 md:grid-cols-3 ${lihatNilai ? 'xl:grid-cols-4 2xl:grid-cols-7' : '2xl:grid-cols-6'}`}>
+        {kartu.map(({ label, nilai, satuan, ikon: Ikon, warna, judul }) => (
+          <div key={label} title={judul} className="bg-white border border-line rounded-2xl p-4 flex items-center gap-3">
             <span className={`size-11 shrink-0 rounded-xl grid place-items-center ${warna}`}>
               <Ikon size={22} />
             </span>
@@ -187,11 +223,21 @@ export default function DataFasilitas() {
         <section aria-label="Daftar fasilitas" className="bg-white border border-line rounded-2xl p-4 flex flex-col gap-3.5 min-w-0">
           <div className="flex flex-wrap items-center justify-between gap-2.5">
             <h2 className="text-lg font-extrabold">Daftar Fasilitas</h2>
-            {bisa('kelolaData') && (
-              <button type="button" onClick={() => setFormTerbuka(true)} className={tombolUtama}>
-                <Plus size={18} /> Tambah Fasilitas
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={unduhExcel} disabled={mengunduh || !fasilitasTampil.length}
+                className={`${tombolKedua} min-h-10 px-3.5 disabled:opacity-50`}>
+                <FileSpreadsheet size={17} className="text-emerald-700" /> {mengunduh ? 'Menyiapkan…' : 'Excel'}
               </button>
-            )}
+              <button type="button" onClick={() => cetakInventaris(bahanUnduh)} disabled={!fasilitasTampil.length}
+                className={`${tombolKedua} min-h-10 px-3.5 disabled:opacity-50`}>
+                <Printer size={17} className="text-primary" /> PDF / Cetak
+              </button>
+              {bisa('kelolaData') && (
+                <button type="button" onClick={() => setFormTerbuka(true)} className={`${tombolUtama} min-h-10 px-4`}>
+                  <Plus size={18} /> Tambah
+                </button>
+              )}
+            </div>
           </div>
 
           <label className="relative">
@@ -204,11 +250,11 @@ export default function DataFasilitas() {
                 setCari(e.target.value)
                 setHalaman(1)
               }}
-              placeholder="Cari nama fasilitas, kode aset, atau ruangan…"
+              placeholder="Cari nama, kode aset, merek, nomor seri, ruangan, atau penanggung jawab…"
             />
           </label>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <select aria-label="Filter kampus" value={kampus} className={gayaInput}
               onChange={gantiFilter((v) => { setKampus(v); setGedung('Semua'); setRuangFilter('Semua') })}>
               <option value="Semua">Kampus</option>
@@ -227,9 +273,14 @@ export default function DataFasilitas() {
               <option value="Semua">Kategori</option>
               {KATEGORI.map((k) => <option key={k}>{k}</option>)}
             </select>
-            <select aria-label="Filter kondisi" value={kondisi} className={`${gayaInput} col-span-2 sm:col-span-1`} onChange={gantiFilter(setKondisi)}>
+            <select aria-label="Filter kondisi" value={kondisi} className={gayaInput} onChange={gantiFilter(setKondisi)}>
               <option value="Semua">Kondisi</option>
               {SEMUA_KONDISI.map((k) => <option key={k} value={k}>{STATUS[k].label}</option>)}
+            </select>
+            <select aria-label="Filter kelengkapan data inventaris" value={kelengkapan} className={gayaInput} onChange={gantiFilter(setKelengkapan)}>
+              <option value="Semua">Data inventaris</option>
+              <option value="lengkap">Lengkap</option>
+              <option value="belum">Belum lengkap</option>
             </select>
           </div>
 
@@ -264,6 +315,13 @@ export default function DataFasilitas() {
                           <span>
                             <span className="block font-bold">{f.nama}</span>
                             <span className="block text-xs font-mono text-muted">{f.kodeAset}</span>
+                            {f.merek || f.tahunPengadaan ? (
+                              <span className="block text-[11px] text-slate-600">
+                                {[[f.merek, f.model].filter(Boolean).join(' '), f.tahunPengadaan && `th. ${f.tahunPengadaan}`].filter(Boolean).join(' · ')}
+                              </span>
+                            ) : (
+                              <span className="block text-[11px] italic text-amber-700">Data inventaris belum diisi</span>
+                            )}
                             <span className="sm:hidden block mt-1">
                               <StatusBadge status={f.kondisi} />
                             </span>
@@ -333,8 +391,8 @@ export default function DataFasilitas() {
         <FormTambahFasilitas
           ruangAwal={ruangFilter !== 'Semua' ? ruangFilter : ''}
           tutup={() => setFormTerbuka(false)}
-          simpan={async (data, namaRuang) => {
-            const hasil = await tambahFasilitas(data)
+          simpan={async (data, namaRuang, fotoBaru) => {
+            const hasil = await tambahFasilitas(data, fotoBaru)
             if (hasil.error) return hasil.error
             setPesan(`${data.jumlah} ${data.satuan} ${data.nama} ditambahkan ke ${namaRuang}.`)
             if (hasil.id) pilihFasilitas(hasil.id)
@@ -381,7 +439,8 @@ function PanelDetail({ f, r, setPesan, tidakDipilih }) {
 
   const TAB = [
     ['detail', 'Detail', Info],
-    ['riwayat', 'Riwayat Kondisi', History],
+    ['inventaris', 'Inventaris', Tag],
+    ['riwayat', 'Riwayat', History],
     ['laporan', 'Laporan', ClipboardList],
   ]
 
@@ -418,7 +477,7 @@ function PanelDetail({ f, r, setPesan, tidakDipilih }) {
       </nav>
 
       {/* Tab */}
-      <div role="tablist" className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-slate-100">
+      <div role="tablist" className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-slate-100">
         {TAB.map(([kode, label, IkonTab]) => (
           <button key={kode} type="button" role="tab" aria-selected={tab === kode} onClick={() => setTab(kode)}
             className={`min-h-10 rounded-lg text-[13px] font-semibold inline-flex items-center justify-center gap-1.5
@@ -578,6 +637,8 @@ function PanelDetail({ f, r, setPesan, tidakDipilih }) {
         </div>
       )}
 
+      {tab === 'inventaris' && <TabInventaris f={f} milikUnit={milikUnit} bolehKelola={bolehKelola} ubah={() => setUbahTerbuka(true)} ubahUnit={setUnitDiubah} />}
+
       {tab === 'riwayat' && <RiwayatKondisi f={f} />}
 
       {tab === 'laporan' && <LaporanFasilitas f={f} />}
@@ -586,6 +647,136 @@ function PanelDetail({ f, r, setPesan, tidakDipilih }) {
       {unitDiubah && <FormUnit u={unitDiubah} f={f} tutup={() => setUnitDiubah(null)} setPesan={setPesan} />}
       {kondisiDiubah && <FormKondisi f={f} u={kondisiDiubah.unit} tutup={() => setKondisiDiubah(null)} setPesan={setPesan} />}
     </section>
+  )
+}
+
+// ===== Tab Inventaris: identitas, perolehan, nilai, penanggung jawab, foto =====
+function TabInventaris({ f, milikUnit, bolehKelola, ubah, ubahUnit }) {
+  const kurang = dataKurang(f)
+  const nilai = nilaiFasilitas(f, milikUnit)
+  const Isi = ({ label, nilai: isi, lebar }) => (
+    <div className={lebar ? 'col-span-2' : ''}>
+      <dt className="text-xs text-muted">{label}</dt>
+      <dd className={`font-semibold ${isi ? '' : 'text-slate-400 font-normal italic'}`}>{isi || 'Belum diisi'}</dd>
+    </div>
+  )
+
+  return (
+    <div className="flex flex-col gap-4">
+      {kurang.length ? (
+        <p className="text-[13px] bg-warn-soft text-warn-ink rounded-xl px-3.5 py-2.5 flex gap-2">
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+          <span>Data inventaris belum lengkap: {kurang.join(', ')}.</span>
+        </p>
+      ) : (
+        <p className="text-[13px] bg-ok-soft text-ok-ink rounded-xl px-3.5 py-2.5 flex gap-2 font-semibold">
+          <BadgeCheck size={16} className="shrink-0 mt-0.5" /> Data inventaris lengkap
+        </p>
+      )}
+
+      {/* Foto barang */}
+      {f.fotoUrl.length ? (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {f.fotoUrl.map((url, i) => (
+            <a key={url} href={url} target="_blank" rel="noreferrer" className="shrink-0 size-24 rounded-xl overflow-hidden border border-line">
+              <img src={url} alt={`Foto ${f.nama} ${i + 1}`} className="size-full object-cover" />
+            </a>
+          ))}
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 text-[13px] text-muted bg-slate-50 rounded-xl px-3.5 py-3">
+          <ImageOff size={16} /> Belum ada foto barang.
+        </div>
+      )}
+
+      <section className="flex flex-col gap-2">
+        <h3 className="text-[13px] font-extrabold text-slate-700 uppercase tracking-wide">Identitas barang</h3>
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+          <Isi label="Merek" nilai={f.merek} />
+          <Isi label="Model / tipe" nilai={f.model} />
+          <Isi label="Spesifikasi" nilai={f.spesifikasi} lebar />
+          <Isi label="Kategori" nilai={f.kategori} />
+          <Isi label="Jumlah" nilai={`${f.jumlah} ${f.satuan} · ${f.lacakPerUnit ? 'per unit' : 'per kelompok'}`} />
+        </dl>
+      </section>
+
+      <section className="flex flex-col gap-2 pt-3 border-t border-line">
+        <h3 className="text-[13px] font-extrabold text-slate-700 uppercase tracking-wide">Perolehan</h3>
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+          <Isi label="Tahun perolehan" nilai={f.tahunPengadaan} />
+          <Isi label="Asal perolehan" nilai={ASAL_PEROLEHAN[f.asalPerolehan]} />
+          <Isi label="Sumber dana" nilai={f.sumberDana} lebar />
+          {bolehKelola && (
+            <>
+              <Isi label={`Harga satuan${f.lacakPerUnit ? ' (bawaan unit)' : ''}`} nilai={f.hargaSatuan !== null ? rupiah(f.hargaSatuan) : ''} />
+              <Isi label="Nilai total" nilai={nilai !== null ? rupiah(nilai) : ''} />
+            </>
+          )}
+        </dl>
+      </section>
+
+      <section className="flex flex-col gap-2 pt-3 border-t border-line">
+        <h3 className="text-[13px] font-extrabold text-slate-700 uppercase tracking-wide">Pengelolaan</h3>
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+          <Isi label="Penanggung jawab" nilai={f.penanggungJawab} lebar />
+          <Isi label="Keterangan" nilai={f.keterangan} lebar />
+        </dl>
+      </section>
+
+      {f.lacakPerUnit && milikUnit.length > 0 && (
+        <section className="flex flex-col gap-2 pt-3 border-t border-line">
+          <h3 className="text-[13px] font-extrabold text-slate-700 uppercase tracking-wide">Rincian per unit</h3>
+          <div className="overflow-x-auto -mx-1 px-1">
+            <table className="w-full min-w-[420px] text-[13px] border-collapse">
+              <thead>
+                <tr className="text-left text-slate-600 text-xs border-b border-line">
+                  <th className="py-2 pr-2 font-bold">Kode</th>
+                  <th className="py-2 pr-2 font-bold">Merek / tipe</th>
+                  <th className="py-2 pr-2 font-bold">No. seri</th>
+                  <th className="py-2 pr-2 font-bold">Tahun</th>
+                  {bolehKelola && <th className="py-2 pr-2 font-bold">Harga</th>}
+                  {bolehKelola && <th className="py-2 font-bold"><span className="sr-only">Aksi</span></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {milikUnit.map((asli) => {
+                  const u = unitLengkap(asli, f)
+                  return (
+                    <tr key={u.id} className="border-b border-slate-100 align-top">
+                      <td className="py-2 pr-2 font-mono font-semibold whitespace-nowrap">
+                        {u.kodeAset}
+                        {asli.fotoUrl.length > 0 && <span className="block text-[11px] font-sans text-muted">{asli.fotoUrl.length} foto</span>}
+                      </td>
+                      <td className="py-2 pr-2">{[u.merek, u.model].filter(Boolean).join(' ') || '-'}</td>
+                      <td className="py-2 pr-2">{u.nomorSeri || '-'}</td>
+                      <td className="py-2 pr-2">{u.tahunPengadaan || '-'}</td>
+                      {bolehKelola && <td className="py-2 pr-2 whitespace-nowrap">{rupiah(u.harga)}</td>}
+                      {bolehKelola && (
+                        <td className="py-2 text-right">
+                          <button type="button" onClick={() => ubahUnit(asli)} aria-label={`Ubah data ${u.kodeAset}`} title="Ubah data unit"
+                            className="size-8 inline-grid place-items-center rounded-lg text-primary hover:bg-primary-soft">
+                            <Pencil size={14} />
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-muted">Kolom unit yang kosong mengikuti data kelompoknya.</p>
+        </section>
+      )}
+
+      {bolehKelola && (
+        <div className="pt-1 border-t border-line">
+          <button type="button" onClick={ubah} className={`${tombolUtama} mt-3`}>
+            <Pencil size={16} /> Ubah Data Inventaris
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -658,6 +849,8 @@ function FormTambahFasilitas({ ruangAwal, tutup, simpan }) {
   const [kampus, setKampus] = useState(ruangPertama?.kampus ?? 'Kampus A')
   const [gedung, setGedung] = useState(ruangPertama?.gedung ?? '')
   const [form, setForm] = useState({ ...FORM_KOSONG, ruangId: ruangAwal })
+  const [inventarisTerbuka, setInventarisTerbuka] = useState(false)
+  const [fotoBaru, setFotoBaru] = useState([])
   const [error, setError] = useState('')
   const [menyimpan, setMenyimpan] = useState(false)
 
@@ -686,11 +879,14 @@ function FormTambahFasilitas({ ruangAwal, tutup, simpan }) {
     if (!form.ruangId) return setError('Pilih ruangan tujuan.')
     if (!form.nama.trim() || !(Number(form.jumlah) > 0)) return setError('Nama fasilitas dan jumlah wajib diisi.')
     if (form.lacakPerUnit && Number(form.jumlah) > 50) return setError('Untuk dicatat per unit, jumlah maksimal 50. Barang massal sebaiknya dicatat per kelompok.')
+    const galatTahun = cekTahun(form.tahunPengadaan)
+    if (galatTahun) return setError(galatTahun)
     setError('')
     setMenyimpan(true)
     const galat = await simpan(
-      { ruangId: form.ruangId, nama: form.nama.trim(), kategori: form.kategori, jumlah: Number(form.jumlah), satuan: form.satuan, kondisi: form.kondisi, kodeAset, lacakPerUnit: form.lacakPerUnit },
+      { ...form, nama: form.nama.trim(), jumlah: Number(form.jumlah), kodeAset },
       ruangTujuan.nama,
+      fotoBaru.map((x) => x.file),
     )
     setMenyimpan(false)
     if (galat) setError(galat)
@@ -785,6 +981,24 @@ function FormTambahFasilitas({ ruangAwal, tutup, simpan }) {
           </div>
         </fieldset>
 
+        <button type="button" aria-expanded={inventarisTerbuka} onClick={() => setInventarisTerbuka(!inventarisTerbuka)}
+          className="sm:col-span-2 flex items-center justify-between gap-3 p-3.5 rounded-xl border border-line text-left hover:bg-slate-50">
+          <span className="text-[13px]">
+            <b className="inline-flex items-center gap-1.5"><Tag size={15} className="text-primary" /> Data inventaris (opsional)</b>
+            <span className="block text-muted">Merek, tahun & asal perolehan, harga, sumber dana, penanggung jawab, dan foto. Bisa diisi nanti.</span>
+          </span>
+          <ChevronRight size={18} className={`shrink-0 transition-transform ${inventarisTerbuka ? 'rotate-90' : ''}`} />
+        </button>
+        {inventarisTerbuka && (
+          <>
+            <BagianInventaris form={form} setForm={setForm} perUnit={form.lacakPerUnit} />
+            <JudulBagian>Foto barang</JudulBagian>
+            <div className="sm:col-span-2">
+              <FotoBarang baru={fotoBaru} setBaru={setFotoBaru} />
+            </div>
+          </>
+        )}
+
         <div className="sm:col-span-2 flex items-center gap-3.5 p-3.5 rounded-xl bg-slate-50 border border-line">
           <span className="size-14 shrink-0 rounded-lg bg-white border border-line grid place-items-center">
             <QrCode size={32} />
@@ -802,20 +1016,34 @@ function FormTambahFasilitas({ ruangAwal, tutup, simpan }) {
   )
 }
 
-// ===== Form: ubah data fasilitas (kelompok) =====
+// ===== Form: ubah data fasilitas (kelompok) + data inventaris =====
 function FormUbahFasilitas({ f, tutup, setPesan }) {
   const { ubahFasilitas } = useData()
-  const [form, setForm] = useState({ nama: f.nama, kategori: f.kategori, jumlah: String(f.jumlah), satuan: f.satuan })
+  const [form, setForm] = useState({
+    nama: f.nama, kategori: f.kategori, jumlah: String(f.jumlah), satuan: f.satuan,
+    merek: f.merek, model: f.model, spesifikasi: f.spesifikasi, tahunPengadaan: f.tahunPengadaan ? String(f.tahunPengadaan) : '',
+    asalPerolehan: f.asalPerolehan, hargaSatuan: hargaKeForm(f.hargaSatuan), sumberDana: f.sumberDana,
+    penanggungJawab: f.penanggungJawab, keterangan: f.keterangan,
+  })
+  const [fotoLama, setFotoLama] = useState(f.foto.map((path, i) => ({ path, url: f.fotoUrl[i] })))
+  const [fotoBaru, setFotoBaru] = useState([])
   const [error, setError] = useState('')
   const [menyimpan, setMenyimpan] = useState(false)
   const ubah = (kolom) => (e) => setForm({ ...form, [kolom]: e.target.value })
 
   async function kirim() {
     if (!form.nama.trim() || !(Number(form.jumlah) > 0)) return setError('Nama fasilitas dan jumlah wajib diisi.')
+    const galatTahun = cekTahun(form.tahunPengadaan)
+    if (galatTahun) return setError(galatTahun)
     setMenyimpan(true)
-    const hasil = await ubahFasilitas(f.id, { ...form, nama: form.nama.trim(), jumlah: f.lacakPerUnit ? null : form.jumlah })
+    const hasil = await ubahFasilitas(
+      f.id,
+      { ...form, nama: form.nama.trim(), jumlah: f.lacakPerUnit ? null : form.jumlah, foto: fotoLama.map((x) => x.path) },
+      fotoBaru.map((x) => x.file),
+    )
     setMenyimpan(false)
     if (hasil.error) return setError(hasil.error)
+    fotoBaru.forEach((x) => URL.revokeObjectURL(x.url))
     setPesan(`Data ${form.nama.trim()} berhasil diperbarui.`)
     tutup()
   }
@@ -828,11 +1056,14 @@ function FormUbahFasilitas({ f, tutup, setPesan }) {
       footer={
         <>
           <button type="button" onClick={tutup} className={tombolKedua}>Batal</button>
-          <button type="button" onClick={kirim} disabled={menyimpan} className={`${tombolUtama} disabled:opacity-60`}>Simpan</button>
+          <button type="button" onClick={kirim} disabled={menyimpan} className={`${tombolUtama} disabled:opacity-60`}>
+            {menyimpan ? 'Menyimpan…' : 'Simpan'}
+          </button>
         </>
       }
     >
       <div className="grid gap-4 sm:grid-cols-2">
+        <JudulBagian>Data barang</JudulBagian>
         <label className={`${gayaLabel} sm:col-span-2`}>
           Nama fasilitas *
           <input className={gayaInput} value={form.nama} onChange={ubah('nama')} />
@@ -858,6 +1089,14 @@ function FormUbahFasilitas({ f, tutup, setPesan }) {
         {f.lacakPerUnit && (
           <p className="sm:col-span-2 text-xs text-muted">Jumlah mengikuti banyaknya unit. Tambah atau hapus unit di panel detail.</p>
         )}
+
+        <BagianInventaris form={form} setForm={setForm} perUnit={f.lacakPerUnit} />
+
+        <JudulBagian>Foto barang</JudulBagian>
+        <div className="sm:col-span-2">
+          <FotoBarang lama={fotoLama} setLama={setFotoLama} baru={fotoBaru} setBaru={setFotoBaru} />
+        </div>
+
         <p className="sm:col-span-2 text-xs text-muted">Kondisi diubah lewat tombol &quot;Ubah Kondisi&quot;, supaya setiap perubahan tercatat di riwayat.</p>
         {error && <p role="alert" className="sm:col-span-2 text-sm font-semibold text-red-700">{error}</p>}
       </div>
@@ -865,19 +1104,159 @@ function FormUbahFasilitas({ f, tutup, setPesan }) {
   )
 }
 
+// ===== Bagian form yang dipakai ulang =====
+function JudulBagian({ children }) {
+  return <p className="sm:col-span-2 -mb-1 pt-2 text-xs font-extrabold uppercase tracking-wide text-primary border-t border-line first:border-t-0 first:pt-0">{children}</p>
+}
+
+function cekTahun(teks) {
+  const tahun = Number(teks)
+  if (teks && (tahun < 1980 || tahun > new Date().getFullYear() + 1)) return 'Tahun perolehan tidak valid.'
+  return ''
+}
+
+// Input rupiah: hanya angka, ditampilkan dengan titik ribuan
+function IsianHarga({ label, nilai, ubah, placeholder }) {
+  return (
+    <label className={gayaLabel}>
+      {label}
+      <span className="relative">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted">Rp</span>
+        <input type="text" inputMode="numeric" className={`${gayaInput} pl-10`} placeholder={placeholder}
+          value={nilai ? Number(nilai).toLocaleString('id-ID') : ''}
+          onChange={(e) => ubah(e.target.value.replace(/\D/g, '').slice(0, 13))} />
+      </span>
+    </label>
+  )
+}
+
+function IsianTahun({ nilai, ubah, label = 'Tahun perolehan', placeholder = 'Contoh: 2022' }) {
+  return (
+    <label className={gayaLabel}>
+      {label}
+      <input type="text" inputMode="numeric" maxLength={4} className={gayaInput} value={nilai} placeholder={placeholder}
+        onChange={(e) => ubah(e.target.value.replace(/\D/g, ''))} />
+    </label>
+  )
+}
+
+function PilihAsal({ nilai, ubah, kosong = 'Pilih…' }) {
+  return (
+    <label className={gayaLabel}>
+      Asal perolehan
+      <select className={gayaInput} value={nilai} onChange={(e) => ubah(e.target.value)}>
+        <option value="">{kosong}</option>
+        {Object.entries(ASAL_PEROLEHAN).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+      </select>
+    </label>
+  )
+}
+
+// Isian inventaris untuk kelompok fasilitas (form tambah & ubah)
+function BagianInventaris({ form, setForm, perUnit }) {
+  const ubah = (kolom) => (e) => setForm({ ...form, [kolom]: e.target.value })
+  const isi = (kolom) => (nilai) => setForm({ ...form, [kolom]: nilai })
+  return (
+    <>
+      <JudulBagian>Identitas barang</JudulBagian>
+      <label className={gayaLabel}>
+        Merek
+        <input className={gayaInput} value={form.merek} onChange={ubah('merek')} placeholder="Contoh: Daikin, Epson, Chitose" />
+      </label>
+      <label className={gayaLabel}>
+        Model / tipe
+        <input className={gayaInput} value={form.model} onChange={ubah('model')} placeholder="Contoh: FTKC25, EB-X500" />
+      </label>
+      <label className={`${gayaLabel} sm:col-span-2`}>
+        Spesifikasi
+        <input className={gayaInput} value={form.spesifikasi} onChange={ubah('spesifikasi')} placeholder="Contoh: 1 PK; 3.600 lumen; kursi lipat besi + busa" />
+      </label>
+
+      <JudulBagian>Perolehan</JudulBagian>
+      <IsianTahun nilai={form.tahunPengadaan} ubah={isi('tahunPengadaan')} />
+      <PilihAsal nilai={form.asalPerolehan} ubah={isi('asalPerolehan')} />
+      <label className={gayaLabel}>
+        Sumber dana
+        <input className={gayaInput} list="saran-sumber-dana" value={form.sumberDana} onChange={ubah('sumberDana')} placeholder="Pilih atau ketik…" />
+      </label>
+      <IsianHarga label={perUnit ? 'Harga per unit' : 'Harga satuan'} nilai={form.hargaSatuan} ubah={isi('hargaSatuan')} placeholder="0" />
+      {perUnit && <p className="sm:col-span-2 -mt-2 text-xs text-muted">Data perolehan di sini menjadi bawaan semua unit. Unit yang berbeda bisa diubah lewat tombol &quot;Data&quot; pada unit.</p>}
+
+      <JudulBagian>Pengelolaan</JudulBagian>
+      <label className={`${gayaLabel} sm:col-span-2`}>
+        Penanggung jawab
+        <input className={gayaInput} list="saran-penanggung-jawab" value={form.penanggungJawab} onChange={ubah('penanggungJawab')} placeholder="Unit kerja atau nama petugas" />
+      </label>
+      <label className={`${gayaLabel} sm:col-span-2`}>
+        Keterangan
+        <textarea rows={2} className={`${gayaInput} py-2.5`} value={form.keterangan} onChange={ubah('keterangan')} placeholder="Contoh: garansi sampai 2026, nomor BAST, catatan lain" />
+      </label>
+
+      <datalist id="saran-sumber-dana">{SARAN_SUMBER_DANA.map((x) => <option key={x} value={x} />)}</datalist>
+      <datalist id="saran-penanggung-jawab">{SARAN_PENANGGUNG_JAWAB.map((x) => <option key={x} value={x} />)}</datalist>
+    </>
+  )
+}
+
+// Foto barang: foto lama (sudah tersimpan) + foto baru yang dipilih
+function FotoBarang({ lama = [], setLama, baru, setBaru }) {
+  const input = useRef(null)
+  const jumlah = lama.length + baru.length
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap gap-2">
+        {lama.map((x, i) => (
+          <div key={x.path} className="relative size-20 rounded-lg overflow-hidden border border-line">
+            <img src={x.url} alt={`Foto tersimpan ${i + 1}`} className="size-full object-cover" />
+            <button type="button" aria-label={`Hapus foto tersimpan ${i + 1}`} onClick={() => setLama(lama.filter((_, j) => j !== i))}
+              className="absolute top-0.5 right-0.5 size-7 grid place-items-center rounded-full bg-slate-900/70 text-white"><X size={14} /></button>
+          </div>
+        ))}
+        {baru.map((x, i) => (
+          <div key={x.url} className="relative size-20 rounded-lg overflow-hidden border-2 border-primary/40">
+            <img src={x.url} alt={`Foto baru ${i + 1}`} className="size-full object-cover" />
+            <button type="button" aria-label={`Batalkan foto baru ${i + 1}`} onClick={() => { URL.revokeObjectURL(x.url); setBaru(baru.filter((_, j) => j !== i)) }}
+              className="absolute top-0.5 right-0.5 size-7 grid place-items-center rounded-full bg-slate-900/70 text-white"><X size={14} /></button>
+          </div>
+        ))}
+        {jumlah < MAKS_FOTO && (
+          <button type="button" onClick={() => input.current?.click()} aria-label="Tambah foto barang"
+            className="size-20 rounded-lg border-2 border-dashed border-slate-300 text-muted hover:border-primary hover:text-primary grid place-items-center">
+            <ImagePlus size={22} />
+          </button>
+        )}
+      </div>
+      <p className="text-xs text-muted">Maksimal {MAKS_FOTO} foto. Foto diperkecil otomatis sebelum diunggah.</p>
+      <input ref={input} type="file" accept="image/*" multiple className="hidden"
+        onChange={(e) => {
+          const dipilih = [...e.target.files].filter((x) => x.type.startsWith('image/'))
+          setBaru([...baru, ...dipilih.slice(0, MAKS_FOTO - jumlah).map((file) => ({ file, url: URL.createObjectURL(file) }))])
+          e.target.value = ''
+        }} />
+    </div>
+  )
+}
+
 // ===== Form: ubah data satu unit =====
 function FormUnit({ u, f, tutup, setPesan }) {
   const { ubahUnit, hapusUnit } = useData()
-  const [form, setForm] = useState({ ...UNIT_KOSONG, ...u, tahunPengadaan: u.tahunPengadaan ? String(u.tahunPengadaan) : '' })
+  const { bisa } = useAuth()
+  const [form, setForm] = useState({
+    ...UNIT_KOSONG, ...u, tahunPengadaan: u.tahunPengadaan ? String(u.tahunPengadaan) : '', hargaPerolehan: hargaKeForm(u.hargaPerolehan),
+  })
+  const [fotoLama, setFotoLama] = useState(u.foto.map((path, i) => ({ path, url: u.fotoUrl[i] })))
+  const [fotoBaru, setFotoBaru] = useState([])
   const [error, setError] = useState('')
   const [menyimpan, setMenyimpan] = useState(false)
   const ubah = (kolom) => (e) => setForm({ ...form, [kolom]: e.target.value })
+  const isi = (kolom) => (nilai) => setForm({ ...form, [kolom]: nilai })
+  const ikut = (nilai) => (nilai ? `Ikut kelompok: ${nilai}` : '')
 
   async function kirim() {
-    const tahun = Number(form.tahunPengadaan)
-    if (form.tahunPengadaan && (tahun < 1990 || tahun > 2100)) return setError('Tahun pengadaan tidak valid.')
+    const galatTahun = cekTahun(form.tahunPengadaan)
+    if (galatTahun) return setError(galatTahun)
     setMenyimpan(true)
-    const hasil = await ubahUnit(u.id, form)
+    const hasil = await ubahUnit(u.id, { ...form, foto: fotoLama.map((x) => x.path) }, fotoBaru.map((x) => x.file))
     setMenyimpan(false)
     if (hasil.error) return setError(hasil.error)
     setPesan(`Data unit ${u.kodeAset} berhasil disimpan.`)
@@ -911,31 +1290,47 @@ function FormUnit({ u, f, tutup, setPesan }) {
       }
     >
       <div className="grid gap-4 sm:grid-cols-2">
+        <JudulBagian>Lokasi</JudulBagian>
         <label className={`${gayaLabel} sm:col-span-2`}>
           Posisi di ruangan
           <input className={gayaInput} value={form.posisi} onChange={ubah('posisi')} placeholder="Contoh: dinding samping kiri, plafon tengah, dinding belakang" />
         </label>
+        <JudulBagian>Identitas unit</JudulBagian>
         <label className={gayaLabel}>
           Merek
-          <input className={gayaInput} value={form.merek} onChange={ubah('merek')} placeholder="Contoh: Daikin" />
+          <input className={gayaInput} value={form.merek} onChange={ubah('merek')} placeholder={ikut(f.merek) || 'Contoh: Daikin'} />
         </label>
         <label className={gayaLabel}>
           Model / tipe
-          <input className={gayaInput} value={form.model} onChange={ubah('model')} placeholder="Contoh: FTKC25" />
+          <input className={gayaInput} value={form.model} onChange={ubah('model')} placeholder={ikut(f.model) || 'Contoh: FTKC25'} />
         </label>
         <label className={`${gayaLabel} sm:col-span-2`}>
           Spesifikasi
-          <input className={gayaInput} value={form.spesifikasi} onChange={ubah('spesifikasi')} placeholder="Contoh: 1 PK, 3.500 lumen" />
+          <input className={gayaInput} value={form.spesifikasi} onChange={ubah('spesifikasi')} placeholder={ikut(f.spesifikasi) || 'Contoh: 1 PK, 3.500 lumen'} />
         </label>
         <label className={gayaLabel}>
           Nomor seri
           <input className={gayaInput} value={form.nomorSeri} onChange={ubah('nomorSeri')} />
         </label>
+
+        <JudulBagian>Perolehan</JudulBagian>
+        <IsianTahun nilai={form.tahunPengadaan} ubah={isi('tahunPengadaan')} placeholder={ikut(f.tahunPengadaan) || 'Contoh: 2022'} />
+        <PilihAsal nilai={form.asalPerolehan} ubah={isi('asalPerolehan')} kosong={f.asalPerolehan ? `Ikut kelompok (${ASAL_PEROLEHAN[f.asalPerolehan]})` : 'Pilih…'} />
         <label className={gayaLabel}>
-          Tahun pengadaan
-          <input type="text" inputMode="numeric" maxLength={4} className={gayaInput} value={form.tahunPengadaan}
-            onChange={(e) => setForm({ ...form, tahunPengadaan: e.target.value.replace(/\D/g, '') })} placeholder="Contoh: 2022" />
+          Sumber dana
+          <input className={gayaInput} list="saran-sumber-dana-unit" value={form.sumberDana} onChange={ubah('sumberDana')} placeholder={ikut(f.sumberDana) || 'Pilih atau ketik…'} />
+          <datalist id="saran-sumber-dana-unit">{SARAN_SUMBER_DANA.map((x) => <option key={x} value={x} />)}</datalist>
         </label>
+        {bisa('kelolaData') && (
+          <IsianHarga label="Harga perolehan" nilai={form.hargaPerolehan} ubah={isi('hargaPerolehan')}
+            placeholder={f.hargaSatuan !== null ? `${Number(f.hargaSatuan).toLocaleString('id-ID')} (ikut kelompok)` : '0'} />
+        )}
+        <p className="sm:col-span-2 -mt-2 text-xs text-muted">Kosongkan bila sama dengan data kelompok {f.nama}.</p>
+
+        <JudulBagian>Foto unit</JudulBagian>
+        <div className="sm:col-span-2">
+          <FotoBarang lama={fotoLama} setLama={setFotoLama} baru={fotoBaru} setBaru={setFotoBaru} />
+        </div>
         <p className="sm:col-span-2 text-xs text-muted">
           Kondisi unit ({STATUS[u.kondisi].label}) diubah lewat tombol &quot;Kondisi&quot; pada unit, supaya tercatat di riwayat.
         </p>

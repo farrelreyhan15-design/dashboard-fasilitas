@@ -95,7 +95,8 @@ const LABEL_KOLOM = {
   hasil_verifikasi: 'Hasil verifikasi', catatan_verifikasi: 'Catatan verifikasi', foto_verifikasi: 'Foto verifikasi', diverifikasi_oleh: 'Diverifikasi oleh',
   diverifikasi_pada: 'Diverifikasi pada', ditugaskan_pada: 'Ditugaskan pada', jenis_tindakan: 'Jenis tindakan', teknisi: 'Teknisi',
   target_selesai: 'Target selesai', estimasi_biaya: 'Estimasi biaya', biaya_aktual: 'Biaya aktual', hasil_perbaikan: 'Hasil perbaikan',
-  foto_sesudah: 'Foto sesudah',
+  foto_sesudah: 'Foto sesudah', asal_perolehan: 'Asal perolehan', harga_satuan: 'Harga satuan', harga_perolehan: 'Harga perolehan',
+  sumber_dana: 'Sumber dana', keterangan: 'Keterangan',
 }
 const KOLOM_DISEMBUNYIKAN = ['id', 'ruangan_id', 'fasilitas_id', 'pelapor_id', 'pemeriksa_id', 'pengguna_id', 'oleh_id', 'petugas_verifikasi_id', 'jadwal_id']
 

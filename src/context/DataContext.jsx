@@ -106,6 +106,18 @@ function fasilitasDariDb(f) {
     catatan: f.catatan ?? '',
     lacakPerUnit: f.lacak_per_unit ?? false,
     terakhirDicek: formatTanggal(f.diperbarui_pada),
+    // Data inventaris
+    merek: f.merek ?? '',
+    model: f.model ?? '',
+    spesifikasi: f.spesifikasi ?? '',
+    tahunPengadaan: f.tahun_pengadaan ?? '',
+    asalPerolehan: f.asal_perolehan ?? '',
+    hargaSatuan: f.harga_satuan ?? null,
+    sumberDana: f.sumber_dana ?? '',
+    penanggungJawab: f.penanggung_jawab ?? '',
+    keterangan: f.keterangan ?? '',
+    foto: f.foto ?? [],
+    fotoUrl: (f.foto ?? []).map(urlFoto),
   }
 }
 
@@ -124,6 +136,12 @@ function unitDariDb(u) {
     kondisi: u.kondisi,
     catatan: u.catatan ?? '',
     terakhirDiubah: formatTanggal(u.diperbarui_pada),
+    // Data inventaris per unit (kosong = mengikuti data kelompoknya)
+    asalPerolehan: u.asal_perolehan ?? '',
+    hargaPerolehan: u.harga_perolehan ?? null,
+    sumberDana: u.sumber_dana ?? '',
+    foto: u.foto ?? [],
+    fotoUrl: (u.foto ?? []).map(urlFoto),
   }
 }
 
@@ -137,6 +155,27 @@ function unitKeDb(data) {
     spesifikasi: kosongJadiNull(data.spesifikasi),
     nomor_seri: kosongJadiNull(data.nomorSeri),
     tahun_pengadaan: data.tahunPengadaan ? Number(data.tahunPengadaan) : null,
+    asal_perolehan: data.asalPerolehan || null,
+    harga_perolehan: angkaAtauNull(data.hargaPerolehan),
+    sumber_dana: kosongJadiNull(data.sumberDana),
+  }
+}
+
+const angkaAtauNull = (nilai) => (nilai === '' || nilai === null || nilai === undefined ? null : Number(nilai))
+
+// Isian data inventaris kelompok fasilitas -> kolom database
+function inventarisKeDb(data) {
+  const kosongJadiNull = (teks) => (String(teks ?? '').trim() === '' ? null : String(teks).trim())
+  return {
+    merek: kosongJadiNull(data.merek),
+    model: kosongJadiNull(data.model),
+    spesifikasi: kosongJadiNull(data.spesifikasi),
+    tahun_pengadaan: data.tahunPengadaan ? Number(data.tahunPengadaan) : null,
+    asal_perolehan: data.asalPerolehan || null,
+    harga_satuan: angkaAtauNull(data.hargaSatuan),
+    sumber_dana: kosongJadiNull(data.sumberDana),
+    penanggung_jawab: kosongJadiNull(data.penanggungJawab),
+    keterangan: kosongJadiNull(data.keterangan),
   }
 }
 
@@ -353,7 +392,9 @@ export function DataProvider({ children }) {
 
   // ===== Fasilitas =====
 
-  async function tambahFasilitas(data) {
+  async function tambahFasilitas(data, fotoBaru = []) {
+    const unggahan = await unggahFoto(fotoBaru)
+    if (unggahan.error) return { error: unggahan.error }
     const { data: baru, error } = await supabase
       .from('fasilitas')
       .insert({
@@ -365,6 +406,8 @@ export function DataProvider({ children }) {
         kondisi: data.kondisi,
         kode_aset: data.kodeAset,
         lacak_per_unit: Boolean(data.lacakPerUnit),
+        ...inventarisKeDb(data),
+        foto: unggahan.pathFoto,
       })
       .select()
       .single()
@@ -397,9 +440,13 @@ export function DataProvider({ children }) {
     return null
   }
 
-  // Mengubah nama / kategori / satuan (dan jumlah, kalau tidak dilacak per unit)
-  async function ubahFasilitas(id, data) {
-    const isian = { nama: data.nama, kategori: data.kategori, satuan: data.satuan }
+  // Mengubah nama / kategori / satuan / data inventaris (dan jumlah, kalau tidak dilacak per unit)
+  //   data.foto = path foto lama yang dipertahankan, fotoBaru = file foto yang baru dipilih
+  async function ubahFasilitas(id, data, fotoBaru = []) {
+    const unggahan = await unggahFoto(fotoBaru)
+    if (unggahan.error) return { error: unggahan.error }
+    const isian = { nama: data.nama, kategori: data.kategori, satuan: data.satuan, ...inventarisKeDb(data) }
+    if (data.foto) isian.foto = [...data.foto, ...unggahan.pathFoto]
     if (data.jumlah) isian.jumlah = Number(data.jumlah)
     const { data: hasil, error } = await supabase.from('fasilitas').update(isian).eq('id', Number(id)).select().single()
     if (error) return { error: pesanGalat(error) }
@@ -434,8 +481,12 @@ export function DataProvider({ children }) {
     if (data) setFasilitas((lama) => lama.map((f) => (f.id === id ? fasilitasDariDb(data) : f)))
   }
 
-  async function ubahUnit(id, data) {
-    const { data: hasil, error } = await supabase.from('unit_fasilitas').update(unitKeDb(data)).eq('id', Number(id)).select().single()
+  async function ubahUnit(id, data, fotoBaru = []) {
+    const unggahan = await unggahFoto(fotoBaru)
+    if (unggahan.error) return { error: unggahan.error }
+    const isian = unitKeDb(data)
+    if (data.foto) isian.foto = [...data.foto, ...unggahan.pathFoto]
+    const { data: hasil, error } = await supabase.from('unit_fasilitas').update(isian).eq('id', Number(id)).select().single()
     if (error) return { error: pesanGalat(error) }
     setUnit((lama) => lama.map((u) => (u.id === id ? unitDariDb(hasil) : u)))
     return {}
