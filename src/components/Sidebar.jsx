@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import {
-  Building2, Home, LayoutList, Briefcase, Activity, Wrench, ClipboardCheck, FileText, Settings, X,
+  Building2, Home, LayoutList, Briefcase, Activity, Wrench, ClipboardCheck, FileText, Settings, X, CalendarDays,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 
@@ -14,6 +14,7 @@ const MENU = [
   { ke: '/rapid-inspection', label: 'Rapid Inspection', ikon: ClipboardCheck, aksi: 'rapidInspection' },
   { ke: '/laporan', label: 'Laporan', ikon: FileText, aksi: 'laporan' },
   { ke: '/pengaturan', label: 'Pengaturan', ikon: Settings, aksi: 'pengaturan' },
+  { ke: '/ruang-uisi', label: 'Ruang UISI', ikon: CalendarDays },
 ]
 
 export default function Sidebar({ terbuka, tutup }) {

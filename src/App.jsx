@@ -6,6 +6,7 @@ import DataFasilitas from './pages/DataFasilitas.jsx'
 import SegeraHadir from './pages/SegeraHadir.jsx'
 import Laporan from './pages/Laporan.jsx'
 import Pemeliharaan from './pages/Pemeliharaan.jsx'
+import RuangUISI from './pages/RuangUISI.jsx'
 import Login from './pages/Login.jsx'
 import Pengaturan from './pages/Pengaturan.jsx'
 import RapidInspection from './pages/RapidInspection.jsx'
@@ -42,6 +43,7 @@ export default function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/ruangan" element={<DataRuangan />} />
         <Route path="/fasilitas" element={<DataFasilitas />} />
+        <Route path="/ruang-uisi" element={<RuangUISI />} />
 
         {/* Hanya untuk peran tertentu */}
         <Route

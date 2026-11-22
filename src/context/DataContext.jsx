@@ -756,6 +756,24 @@ export function DataProvider({ children }) {
     return { data: data.map(inspeksiDariDb) }
   }
 
+  // ===== Jadwal pemakaian ruangan (menu Ruang UISI) =====
+  // tanggal = 'YYYY-MM-DD'
+  async function ambilJadwalRuangan(tanggal) {
+    const { data, error } = await supabase.from('jadwal_ruangan').select('*').eq('tanggal', tanggal).order('jam_mulai')
+    if (error) return { error: error.message, data: [] }
+    return {
+      data: data.map((b) => ({
+        id: String(b.id),
+        ruangId: String(b.ruangan_id),
+        jamMulai: b.jam_mulai,
+        jamSelesai: b.jam_selesai,
+        jenis: b.jenis,
+        kegiatan: b.kegiatan,
+        peminjam: b.peminjam,
+      })),
+    }
+  }
+
   // ===== Log riwayat sistem (khusus Sarpras) =====
   // dari, sampai = objek Date. Mengembalikan baris log mentah dari database.
   async function ambilLog(dari, sampai) {
@@ -807,6 +825,7 @@ export function DataProvider({ children }) {
     hapusJadwal,
     buatTiketPreventif,
     ambilLog,
+    ambilJadwalRuangan,
   }
   return <DataContext.Provider value={nilai}>{children}</DataContext.Provider>
 }
