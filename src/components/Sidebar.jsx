@@ -6,10 +6,9 @@ import { useAuth } from '../context/AuthContext.jsx'
 
 // Daftar menu di sidebar. Menu dengan "aksi" hanya muncul untuk peran yang diizinkan.
 const MENU = [
-  { ke: '/', label: 'Dashboard', ikon: Home },
+  { ke: '/', label: 'Dashboard', ikon: Activity, lencana: 'Real-Time' },
   { ke: '/ruangan', label: 'Data Ruangan', ikon: LayoutList },
   { ke: '/fasilitas', label: 'Data Fasilitas', ikon: Briefcase },
-  { ke: '/monitoring', label: 'Monitoring', ikon: Activity, lencana: 'Real-Time', samaDengan: '/' },
   { ke: '/pemeliharaan', label: 'Pemeliharaan', ikon: Wrench, aksi: 'pemeliharaan' },
   { ke: '/rapid-inspection', label: 'Rapid Inspection', ikon: ClipboardCheck, aksi: 'rapidInspection' },
   { ke: '/laporan', label: 'Laporan', ikon: FileText, aksi: 'laporan' },
