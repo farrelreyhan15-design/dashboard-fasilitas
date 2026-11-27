@@ -65,7 +65,7 @@ export default function TombolGoogle({ saatToken, gagalDimuat }) {
           client_id: ID_KLIEN,
           nonce: nonce.hex,
           callback: (jawaban) => panggilBalik.current(jawaban.credential, nonce.asli),
-          auto_select: false,
+          auto_select: true, // masuk otomatis kalau akun ini sudah pernah login sebelumnya
           cancel_on_tap_outside: true,
           context: 'signin',
           itp_support: true,
