@@ -8,6 +8,7 @@ import Laporan from './pages/Laporan.jsx'
 import Pemeliharaan from './pages/Pemeliharaan.jsx'
 import RuangUISI from './pages/RuangUISI.jsx'
 import Login from './pages/Login.jsx'
+import Privasi from './pages/Privasi.jsx'
 import Pengaturan from './pages/Pengaturan.jsx'
 import RapidInspection from './pages/RapidInspection.jsx'
 import { useAuth } from './context/AuthContext.jsx'
@@ -30,6 +31,7 @@ export default function App() {
     <Routes>
       {/* Halaman yang bisa dibuka tanpa login */}
       <Route path="/login" element={<Login />} />
+      <Route path="/privasi" element={<Privasi />} />
 
       {/* Semua halaman di bawah ini wajib login dulu */}
       <Route

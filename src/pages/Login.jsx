@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { Building2, ChevronDown, Eye, EyeOff, KeyRound, LogIn } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
 import TombolGoogle from '../components/TombolGoogle.jsx'
@@ -56,7 +56,7 @@ export default function Login() {
   const galat = error || pesanLogin
 
   return (
-    <div className="min-h-screen bg-page flex items-center justify-center p-4">
+    <div className="min-h-screen bg-page flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-md bg-white border border-line rounded-2xl shadow-sm overflow-hidden">
         {/* Bagian atas berwarna */}
         <div className="bg-primary text-white px-7 py-8 flex flex-col gap-3">
@@ -163,6 +163,9 @@ export default function Login() {
           </div>
         </div>
       </div>
+      <p className="mt-4 text-xs text-muted text-center">
+        <Link to="/privasi" className="underline underline-offset-2 hover:text-primary">Kebijakan Privasi</Link>
+      </p>
     </div>
   )
 }
