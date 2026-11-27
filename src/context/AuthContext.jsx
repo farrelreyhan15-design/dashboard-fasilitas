@@ -4,8 +4,10 @@ import { supabase } from '../lib/supabase.js'
 
 /*
   AKUN & HAK AKSES (memakai Supabase Auth)
-  - Email dan kata sandi disimpan dan diperiksa oleh Supabase (auth.users)
+  - Login utama: akun Google UISI (@uisi.ac.id = Dosen, @student.uisi.ac.id = Mahasiswa)
+  - Login email + kata sandi tetap ada untuk akun uji yang didaftarkan Sarpras
   - Nama, peran, dan status aktif disimpan di tabel profiles
+  - Email berperan khusus (Sarpras, PKTL) didaftarkan di tabel akun_terdaftar
 */
 
 export const NAMA_PERAN = {
@@ -34,6 +36,19 @@ export const HAK_AKSES = {
 }
 
 const KOLOM_PROFIL = 'id, email, nama, peran, aktif'
+const PESAN_BUKAN_UISI = 'Akun ini tidak diizinkan. Masuk dengan akun Google UISI (@uisi.ac.id atau @student.uisi.ac.id).'
+
+// Kalau login Google ditolak, Supabase kembali ke halaman ini dengan pesan error di alamat (URL).
+// Dibaca sekali saat aplikasi dimuat, lalu alamatnya dibersihkan.
+function bacaGalatLoginDariUrl() {
+  const dariQuery = new URLSearchParams(window.location.search).get('error_description')
+  const dariHash = new URLSearchParams(window.location.hash.slice(1)).get('error_description')
+  const teks = dariQuery || dariHash
+  if (!teks) return ''
+  window.history.replaceState(null, '', window.location.pathname)
+  return /database error saving new user|EMAIL_TIDAK_DIIZINKAN/i.test(teks) ? PESAN_BUKAN_UISI : `Login Google gagal: ${teks}`
+}
+const GALAT_LOGIN_AWAL = bacaGalatLoginDariUrl()
 
 // Mengambil profil (nama, peran, aktif) milik satu akun
 async function ambilProfil(idAkun) {
@@ -47,6 +62,8 @@ export function AuthProvider({ children }) {
   const [pengguna, setPengguna] = useState(null)
   const [memuat, setMemuat] = useState(true)
   const [daftarAkun, setDaftarAkun] = useState([])
+  const [daftarTerdaftar, setDaftarTerdaftar] = useState([]) // email berperan khusus (akun_terdaftar)
+  const [pesanLogin, setPesanLogin] = useState(GALAT_LOGIN_AWAL)
 
   // Saat aplikasi dibuka: cek apakah masih ada sesi login sebelumnya
   useEffect(() => {
@@ -55,6 +72,11 @@ export function AuthProvider({ children }) {
     supabase.auth.getSession().then(async ({ data }) => {
       const profil = data.session ? await ambilProfil(data.session.user.id) : null
       if (!masihTerpasang) return
+      // Sesi ada (mis. baru kembali dari login Google) tetapi akun dinonaktifkan: keluarkan lagi
+      if (data.session && !profil?.aktif) {
+        await supabase.auth.signOut()
+        setPesanLogin(profil ? 'Akun ini sedang dinonaktifkan. Hubungi Sarana Prasarana.' : 'Profil akun tidak ditemukan. Hubungi Sarana Prasarana.')
+      }
       setPengguna(profil?.aktif ? profil : null)
       setMemuat(false)
     })
@@ -78,7 +100,25 @@ export function AuthProvider({ children }) {
       .select(KOLOM_PROFIL)
       .order('dibuat_pada')
       .then(({ data }) => setDaftarAkun(data ?? []))
+    supabase
+      .from('akun_terdaftar')
+      .select('email, nama, peran, dibuat_pada')
+      .order('dibuat_pada', { ascending: false })
+      .then(({ data }) => setDaftarTerdaftar(data ?? []))
   }, [pengguna?.peran])
+
+  // Login dengan akun Google. Browser akan pindah ke halaman Google, lalu kembali ke dashboard.
+  async function loginGoogle() {
+    setPesanLogin('')
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/`,
+        queryParams: { prompt: 'select_account' }, // selalu tampilkan pilihan akun Google
+      },
+    })
+    return error ? `Login Google gagal: ${error.message}` : true
+  }
 
   // Mengembalikan true kalau berhasil, atau pesan kesalahan kalau gagal
   async function login(email, sandi) {
@@ -122,6 +162,10 @@ export function AuthProvider({ children }) {
   async function tambahAkun({ nama, email, peran, sandi }) {
     const emailBersih = email.trim().toLowerCase()
 
+    // Email harus terdaftar dulu, karena database hanya mengizinkan akun kata sandi untuk email terdaftar
+    const galatDaftar = await daftarkanEmail({ email: emailBersih, nama, peran })
+    if (galatDaftar) return galatDaftar
+
     // Klien sementara yang tidak menyimpan sesi,
     // supaya Sarpras tidak ikut "pindah login" ke akun baru
     const klienDaftar = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY, {
@@ -148,6 +192,25 @@ export function AuthProvider({ children }) {
     return null
   }
 
+  // Mendaftarkan email dengan peran khusus. Kalau akunnya sudah ada, perannya langsung diubah.
+  // Mengembalikan null kalau berhasil, atau pesan kesalahan.
+  async function daftarkanEmail({ email, nama, peran }) {
+    const emailBersih = email.trim().toLowerCase()
+    const baris = { email: emailBersih, nama: nama?.trim() || null, peran, didaftarkan_oleh: pengguna.id }
+    const { error } = await supabase.from('akun_terdaftar').upsert(baris)
+    if (error) return `Gagal mendaftarkan email: ${error.message}`
+    setDaftarTerdaftar((lama) => [{ ...baris, dibuat_pada: new Date().toISOString() }, ...lama.filter((x) => x.email !== emailBersih)])
+
+    const akunAda = daftarAkun.find((a) => a.email.toLowerCase() === emailBersih)
+    if (akunAda && akunAda.peran !== peran && akunAda.id !== pengguna.id) await ubahPeran(akunAda.id, peran)
+    return null
+  }
+
+  async function hapusTerdaftar(email) {
+    const { error } = await supabase.from('akun_terdaftar').delete().eq('email', email)
+    if (!error) setDaftarTerdaftar((lama) => lama.filter((x) => x.email !== email))
+  }
+
   async function ubahPeran(id, peran) {
     const { error } = await supabase.from('profiles').update({ peran }).eq('id', id)
     if (!error) setDaftarAkun((lama) => lama.map((a) => (a.id === id ? { ...a, peran } : a)))
@@ -163,7 +226,10 @@ export function AuthProvider({ children }) {
     return <div className="min-h-screen grid place-items-center text-sm text-muted">Memuat…</div>
   }
 
-  const nilai = { pengguna, login, logout, bisa, daftarAkun, tambahAkun, ubahPeran, ubahStatus }
+  const nilai = {
+    pengguna, login, loginGoogle, pesanLogin, logout, bisa,
+    daftarAkun, tambahAkun, ubahPeran, ubahStatus, daftarTerdaftar, daftarkanEmail, hapusTerdaftar,
+  }
   return <AuthContext.Provider value={nilai}>{children}</AuthContext.Provider>
 }
 
