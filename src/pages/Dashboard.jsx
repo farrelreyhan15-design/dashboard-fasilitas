@@ -49,7 +49,7 @@ function ringkasMasalah(daftar) {
 }
 
 export default function Dashboard() {
-  const { ruang, fasilitas, aktivitas, inspeksi, laporan, jadwal } = useData()
+  const { ruang, fasilitas, aktivitas, inspeksi, laporan, jadwal, statusLangsung, diperbaruiPada } = useData()
   const { pengguna, bisa } = useAuth()
   const peran = pengguna?.peran
   const [kampus, setKampus] = useState('Semua')
@@ -152,7 +152,17 @@ export default function Dashboard() {
 
   return (
     <>
-      <Header judul="Dashboard Monitoring" subjudul={`${sapaan()}, ${pengguna?.nama ?? ''}. Berikut kondisi ruangan dan fasilitas UISI terkini.`} />
+      <Header
+        judul="Dashboard Monitoring Real-Time"
+        subjudul={
+          <>
+            {sapaan()}, {pengguna?.nama ?? ''}.
+            <span className="block mt-1">
+              <IndikatorLangsung status={statusLangsung} waktu={diperbaruiPada} />
+            </span>
+          </>
+        }
+      />
       <InfoMuat />
 
       {/* Kartu ringkasan */}
@@ -413,5 +423,25 @@ function Kotak({ judul, tautan, children }) {
       </div>
       {children}
     </section>
+  )
+}
+
+// Penanda koneksi real-time di bawah judul: hijau berdenyut = data diperbarui otomatis
+function IndikatorLangsung({ status, waktu }) {
+  const [warna, label] = {
+    terhubung: ['bg-emerald-500', 'Langsung'],
+    menyambung: ['bg-amber-400', 'Menyambungkan…'],
+    terputus: ['bg-slate-400', 'Pembaruan otomatis terputus'],
+  }[status] ?? ['bg-slate-400', '']
+  const jam = waktu?.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-sm font-semibold text-slate-700" role="status">
+      <span className="relative flex size-2.5">
+        {status === 'terhubung' && <span className="absolute inline-flex size-full rounded-full bg-emerald-400 opacity-75 animate-ping" />}
+        <span className={`relative inline-flex size-2.5 rounded-full ${warna}`} />
+      </span>
+      {label}
+      {jam && <span className="font-normal text-muted">· diperbarui {jam}</span>}
+    </span>
   )
 }

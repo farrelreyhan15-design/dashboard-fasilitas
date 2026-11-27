@@ -282,6 +282,8 @@ export function DataProvider({ children }) {
   const [memuat, setMemuat] = useState(true)
   const [galatMuat, setGalatMuat] = useState('')
   const [versiData, setVersiData] = useState(0) // dinaikkan untuk memuat ulang semua data
+  const [statusLangsung, setStatusLangsung] = useState('menyambung') // koneksi real-time: menyambung / terhubung / terputus
+  const [diperbaruiPada, setDiperbaruiPada] = useState(null) // waktu data terakhir dimuat
 
   // Ambil semua data setiap kali ada pengguna yang login
   const idPengguna = pengguna?.id
@@ -308,6 +310,7 @@ export function DataProvider({ children }) {
       setUnit((hasilUnit.data ?? []).map(unitDariDb))
       await Promise.all([muatLaporan(), muatJadwal()])
       setMemuat(false)
+      setDiperbaruiPada(new Date())
     }
 
     muat()
@@ -315,6 +318,37 @@ export function DataProvider({ children }) {
       masihTerpasang = false
     }
   }, [idPengguna, versiData])
+
+  // REAL-TIME: dengarkan perubahan data dari pengguna lain, lalu muat ulang otomatis.
+  // Beberapa perubahan yang datang berdekatan (mis. satu inspeksi mengubah banyak fasilitas)
+  // digabung menjadi satu kali muat ulang.
+  useEffect(() => {
+    if (!idPengguna) return
+    let jeda = null
+    const muatNanti = () => {
+      clearTimeout(jeda)
+      jeda = setTimeout(() => setVersiData((v) => v + 1), 1200)
+    }
+
+    const kanal = supabase.channel(`data-langsung-${idPengguna}`)
+    for (const tabel of ['ruangan', 'fasilitas', 'unit_fasilitas', 'inspeksi', 'laporan', 'jadwal_preventif']) {
+      kanal.on('postgres_changes', { event: '*', schema: 'public', table: tabel }, muatNanti)
+    }
+    kanal.subscribe((status) => {
+      if (status === 'SUBSCRIBED') setStatusLangsung('terhubung')
+      else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') setStatusLangsung('terputus')
+    })
+
+    // Saat tab dibuka kembali setelah ditinggal, muat ulang supaya tidak ada yang terlewat
+    const saatTerlihat = () => document.visibilityState === 'visible' && muatNanti()
+    document.addEventListener('visibilitychange', saatTerlihat)
+
+    return () => {
+      clearTimeout(jeda)
+      supabase.removeChannel(kanal)
+      document.removeEventListener('visibilitychange', saatTerlihat)
+    }
+  }, [idPengguna])
 
   // Ruang lengkap dengan status, jumlah fasilitas, dan inspeksi terakhirnya
   const ruangDenganStatus = useMemo(
@@ -849,6 +883,8 @@ export function DataProvider({ children }) {
     ambilRiwayatInspeksi,
     memuat,
     galatMuat,
+    statusLangsung,
+    diperbaruiPada,
     tambahRuang,
     ubahRuang,
     tambahFasilitas,
