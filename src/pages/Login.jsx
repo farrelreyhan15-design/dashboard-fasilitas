@@ -2,10 +2,11 @@ import { useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { Building2, ChevronDown, Eye, EyeOff, KeyRound, LogIn } from 'lucide-react'
 import { useAuth } from '../context/AuthContext.jsx'
+import TombolGoogle from '../components/TombolGoogle.jsx'
 import { gayaInput, gayaLabel, tombolUtama } from '../components/Modal.jsx'
 
 export default function Login() {
-  const { pengguna, login, loginGoogle, pesanLogin } = useAuth()
+  const { pengguna, login, loginGoogle, loginDenganTokenGoogle, pesanLogin } = useAuth()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [sandi, setSandi] = useState('')
@@ -14,6 +15,8 @@ export default function Login() {
   const [error, setError] = useState('')
   const [sedang, setSedang] = useState(false)
   const [keGoogle, setKeGoogle] = useState(false)
+  const [pakaiCadangan, setPakaiCadangan] = useState(false) // tombol Google personal gagal dimuat
+  const [memeriksaGoogle, setMemeriksaGoogle] = useState(false)
 
   // Kalau sudah login, langsung ke dashboard
   if (pengguna) return <Navigate to="/" replace />
@@ -27,6 +30,16 @@ export default function Login() {
       setKeGoogle(false)
       setError(hasil)
     }
+  }
+
+  // Dipanggil tombol Google personal / One Tap setelah pengguna memilih akun
+  async function masukDenganToken(token, nonce) {
+    setError('')
+    setMemeriksaGoogle(true)
+    const hasil = await loginDenganTokenGoogle(token, nonce)
+    setMemeriksaGoogle(false)
+    if (hasil !== true) return setError(hasil)
+    navigate('/', { replace: true })
   }
 
   async function kirim(e) {
@@ -55,18 +68,33 @@ export default function Login() {
         <div className="px-7 py-7 flex flex-col gap-4">
           {/* Login utama: akun Google UISI */}
           <div className="flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={masukGoogle}
-              disabled={keGoogle}
-              className="w-full min-h-12 inline-flex items-center justify-center gap-2.5 rounded-xl border border-slate-300 bg-white font-bold text-ink hover:bg-slate-50 disabled:opacity-60"
-            >
-              <LogIn size={19} className="text-primary" />
-              {keGoogle ? 'Membuka Google…' : 'Masuk dengan Akun Google UISI'}
-            </button>
+            {pakaiCadangan ? (
+              <button
+                type="button"
+                onClick={masukGoogle}
+                disabled={keGoogle}
+                className="w-full min-h-12 inline-flex items-center justify-center gap-2.5 rounded-xl border border-slate-300 bg-white font-bold text-ink hover:bg-slate-50 disabled:opacity-60"
+              >
+                <LogIn size={19} className="text-primary" />
+                {keGoogle ? 'Membuka Google…' : 'Masuk dengan Akun Google UISI'}
+              </button>
+            ) : (
+              <>
+                <TombolGoogle saatToken={masukDenganToken} gagalDimuat={() => setPakaiCadangan(true)} />
+                {memeriksaGoogle && <p role="status" className="text-sm text-center text-muted">Memeriksa akun…</p>}
+              </>
+            )}
             <p className="text-xs text-muted text-center leading-relaxed">
               Gunakan email <b className="text-slate-700">@uisi.ac.id</b> (dosen & staf) atau{' '}
               <b className="text-slate-700">@student.uisi.ac.id</b> (mahasiswa).
+              {!pakaiCadangan && (
+                <>
+                  {' '}
+                  <button type="button" onClick={masukGoogle} className="underline underline-offset-2 hover:text-primary">
+                    Tombol tidak muncul?
+                  </button>
+                </>
+              )}
             </p>
           </div>
 

@@ -120,6 +120,34 @@ export function AuthProvider({ children }) {
     return error ? `Login Google gagal: ${error.message}` : true
   }
 
+  // Login dengan tombol Google personal / One Tap (jendela kecil, halaman tidak berpindah).
+  // token = kartu identitas dari Google, nonce = kode acak pengaman yang sama dengan yang dikirim ke Google.
+  async function loginDenganTokenGoogle(token, nonce) {
+    setPesanLogin('')
+    const { data, error } = await supabase.auth.signInWithIdToken({ provider: 'google', token, nonce })
+    if (error) {
+      return /database error saving new user|EMAIL_TIDAK_DIIZINKAN/i.test(error.message)
+        ? PESAN_BUKAN_UISI
+        : `Login Google gagal: ${error.message}`
+    }
+    return periksaProfil(data.user.id)
+  }
+
+  // Setelah berhasil masuk: pastikan profil ada dan aktif, lalu simpan sebagai pengguna
+  async function periksaProfil(idAkun) {
+    const profil = await ambilProfil(idAkun)
+    if (!profil) {
+      await supabase.auth.signOut()
+      return 'Profil akun tidak ditemukan. Hubungi Sarana Prasarana.'
+    }
+    if (!profil.aktif) {
+      await supabase.auth.signOut()
+      return 'Akun ini sedang dinonaktifkan. Hubungi Sarana Prasarana.'
+    }
+    setPengguna(profil)
+    return true
+  }
+
   // Mengembalikan true kalau berhasil, atau pesan kesalahan kalau gagal
   async function login(email, sandi) {
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -132,22 +160,12 @@ export function AuthProvider({ children }) {
         : 'Gagal terhubung ke server. Periksa koneksi internet lalu coba lagi.'
     }
 
-    const profil = await ambilProfil(data.user.id)
-    if (!profil) {
-      await supabase.auth.signOut()
-      return 'Profil akun tidak ditemukan. Hubungi Sarana Prasarana.'
-    }
-    if (!profil.aktif) {
-      await supabase.auth.signOut()
-      return 'Akun ini sedang dinonaktifkan. Hubungi Sarana Prasarana.'
-    }
-
-    setPengguna(profil)
-    return true
+    return periksaProfil(data.user.id)
   }
 
   async function logout() {
     await supabase.auth.signOut()
+    window.google?.accounts?.id?.disableAutoSelect() // supaya Google tidak langsung memasukkan lagi
     setPengguna(null)
   }
 
@@ -227,7 +245,7 @@ export function AuthProvider({ children }) {
   }
 
   const nilai = {
-    pengguna, login, loginGoogle, pesanLogin, logout, bisa,
+    pengguna, login, loginGoogle, loginDenganTokenGoogle, pesanLogin, logout, bisa,
     daftarAkun, tambahAkun, ubahPeran, ubahStatus, daftarTerdaftar, daftarkanEmail, hapusTerdaftar,
   }
   return <AuthContext.Provider value={nilai}>{children}</AuthContext.Provider>
